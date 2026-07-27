@@ -1,5 +1,9 @@
 # market-data-normalizer (`mdnorm`)
 
+[![CI](https://github.com/Harvestgroup360/market-data-normalizer/actions/workflows/ci.yml/badge.svg)](https://github.com/Harvestgroup360/market-data-normalizer/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
+
 Normalize heterogeneous market-data feeds — CSV tick dumps, exchange
 WebSocket JSON, and FIX — into a single, exchange-agnostic event schema, so
 downstream research and execution code never has to care where a tick came
