@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mdnorm"
+version = "0.1.0"
+description = "Normalize heterogeneous market-data feeds (CSV, WebSocket JSON, FIX) into one exchange-agnostic schema."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "HarvestGroup360", email = "github@harvestgroup360.com" }]
+keywords = ["market-data", "trading", "fix-protocol", "normalization", "quantitative-finance", "tick-data"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://harvestgroup360.com"
+Repository = "https://github.com/Harvestgroup360/market-data-normalizer"
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mdnorm"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
