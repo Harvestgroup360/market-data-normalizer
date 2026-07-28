@@ -12,7 +12,13 @@ from .schema import EventType, MarketEvent, Side
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__all__ = ["from_csv_row", "from_ws_json", "from_fix"]
+__all__ = [
+    "from_csv_row",
+    "from_ws_json",
+    "from_fix",
+    "from_ws_quote",
+    "from_csv_quote",
+]
 
 
 def _side(value: str | None) -> Side | None:
@@ -121,4 +127,71 @@ def from_fix(message: str, *, venue: str, sep: str = "\x01") -> MarketEvent:
         price=Decimal(f["31"]),
         size=Decimal(f["32"]) if "32" in f else None,
         side=_side(f.get("54")),
+    )
+
+
+def _dec(value: Any) -> Decimal | None:
+    return Decimal(str(value)) if value not in (None, "") else None
+
+
+def from_ws_quote(
+    msg: Mapping[str, Any],
+    *,
+    venue: str,
+    mapping: Mapping[str, str] | None = None,
+    ts_unit: str = "ms",
+) -> MarketEvent:
+    """Normalize an exchange best-bid/offer (book-ticker) message.
+
+    Defaults match the common ``{s, b, B, a, A}`` shape (symbol, bid price,
+    bid qty, ask price, ask qty). A timestamp key ``T`` is used if present,
+    otherwise ``ts_ns`` is ``0``. ``mapping`` overrides the source keys.
+    """
+    m = {"symbol": "s", "bid": "b", "bid_size": "B",
+         "ask": "a", "ask_size": "A", "ts": "T"}
+    if mapping:
+        m.update(mapping)
+
+    return MarketEvent(
+        symbol=canonical_symbol(str(msg[m["symbol"]])),
+        venue=venue,
+        event_type=EventType.QUOTE,
+        ts_ns=epoch_to_ns(msg[m["ts"]], ts_unit) if m["ts"] in msg else 0,
+        bid_price=_dec(msg.get(m["bid"])),
+        bid_size=_dec(msg.get(m["bid_size"])),
+        ask_price=_dec(msg.get(m["ask"])),
+        ask_size=_dec(msg.get(m["ask_size"])),
+    )
+
+
+def from_csv_quote(
+    row: Mapping[str, str],
+    *,
+    venue: str,
+    mapping: Mapping[str, str] | None = None,
+    ts_unit: str | None = None,
+) -> MarketEvent:
+    """Normalize one CSV quote row (bid/ask columns).
+
+    ``mapping`` renames columns to ``symbol, ts, bid, bid_size, ask,
+    ask_size``. If ``ts_unit`` is given the timestamp is read as an epoch
+    number in that unit, otherwise it is parsed as ISO-8601.
+    """
+    m = {"symbol": "symbol", "ts": "ts", "bid": "bid",
+         "bid_size": "bid_size", "ask": "ask", "ask_size": "ask_size"}
+    if mapping:
+        m.update(mapping)
+
+    ts_raw = row[m["ts"]]
+    ts_ns = epoch_to_ns(float(ts_raw), ts_unit) if ts_unit else iso_to_ns(ts_raw)
+
+    return MarketEvent(
+        symbol=canonical_symbol(row[m["symbol"]]),
+        venue=venue,
+        event_type=EventType.QUOTE,
+        ts_ns=ts_ns,
+        bid_price=_dec(row.get(m["bid"])),
+        bid_size=_dec(row.get(m["bid_size"])),
+        ask_price=_dec(row.get(m["ask"])),
+        ask_size=_dec(row.get(m["ask_size"])),
     )

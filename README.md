@@ -49,6 +49,22 @@ from_fix("55=BTC/USD|31=42000.5|32=0.25|54=1|60=20260102-00:00:00",
 
 All three calls above produce the **same** `MarketEvent`.
 
+### Quotes (bid/ask)
+
+```python
+from mdnorm import from_ws_quote
+
+q = from_ws_quote(
+    {"s": "BTCUSDT", "b": "41999.5", "B": "1.2",
+     "a": "42000.5", "A": "0.8", "T": 1767312000000},
+    venue="binance",
+)
+q.mid_price   # Decimal("42000.0")
+q.spread      # Decimal("1.0")
+```
+
+`from_csv_quote` does the same for CSV rows with bid/ask columns.
+
 ## The unified schema
 
 ```python

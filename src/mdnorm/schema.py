@@ -55,3 +55,17 @@ class MarketEvent:
             self.bid_price is None and self.ask_price is None
         ):
             raise ValueError("quote events require at least one side")
+
+    @property
+    def mid_price(self) -> Optional[Decimal]:
+        """Mid price of a quote, or ``None`` if either side is missing."""
+        if self.bid_price is not None and self.ask_price is not None:
+            return (self.bid_price + self.ask_price) / 2
+        return None
+
+    @property
+    def spread(self) -> Optional[Decimal]:
+        """Absolute bid/ask spread, or ``None`` if either side is missing."""
+        if self.bid_price is not None and self.ask_price is not None:
+            return self.ask_price - self.bid_price
+        return None
