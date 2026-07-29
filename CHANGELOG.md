@@ -3,6 +3,13 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.3.0] - 2026-07-28
+
+### Added
+- OHLCV time-bar aggregation: `time_bars(events, interval_ns)` and the `Bar`
+  type (open/high/low/close/volume/trades/vwap). Handles out-of-order input
+  and ignores non-trade events.
+
 ## [0.2.0] - 2026-07-27
 
 ### Added

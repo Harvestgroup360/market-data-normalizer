@@ -65,6 +65,18 @@ q.spread      # Decimal("1.0")
 
 `from_csv_quote` does the same for CSV rows with bid/ask columns.
 
+### OHLCV bars
+
+```python
+from mdnorm import time_bars
+
+bars = time_bars(events, interval_ns=60_000_000_000)  # 1-minute bars
+bars[0].open, bars[0].high, bars[0].low, bars[0].close, bars[0].volume, bars[0].vwap
+```
+
+`time_bars` reduces a stream of trade events into fixed-interval OHLCV `Bar`s
+(with VWAP and trade count), sorting out-of-order input and skipping quotes.
+
 ## The unified schema
 
 ```python
