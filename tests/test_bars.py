@@ -31,8 +31,8 @@ def test_single_interval_ohlcv():
     assert b.close == Decimal("102")
     assert b.volume == Decimal("5")
     assert b.trades == 4
-    # vwap = (100*1 + 105*2 + 98*1 + 102*1) / 5 = 520/5 = 104
-    assert b.vwap == Decimal("104")
+    # vwap = (100*1 + 105*2 + 98*1 + 102*1) / 5 = 510/5 = 102
+    assert b.vwap == Decimal("102")
 
 
 def test_splits_into_intervals():
