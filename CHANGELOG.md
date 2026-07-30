@@ -3,6 +3,13 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.4.0] - 2026-07-30
+
+### Added
+- Data-quality module: `find_issues` and `clean` detect and drop bad ticks
+  (price outliers), gaps, out-of-order records and non-positive price/size,
+  returning a structured `QualityIssue` report.
+
 ## [0.3.0] - 2026-07-28
 
 ### Added

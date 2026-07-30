@@ -77,6 +77,18 @@ bars[0].open, bars[0].high, bars[0].low, bars[0].close, bars[0].volume, bars[0].
 `time_bars` reduces a stream of trade events into fixed-interval OHLCV `Bar`s
 (with VWAP and trade count), sorting out-of-order input and skipping quotes.
 
+### Data quality
+
+```python
+from mdnorm.quality import find_issues, clean
+
+find_issues(events)          # list of QualityIssue (outlier / gap / out_of_order / non_positive)
+cleaned, issues = clean(events)  # drop bad ticks & invalid rows, keep a report
+```
+
+`clean` removes price outliers and non-positive price/size records and returns
+the surviving events plus everything it flagged.
+
 ## The unified schema
 
 ```python

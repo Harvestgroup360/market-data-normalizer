@@ -13,11 +13,12 @@ from .normalizers import (
     from_ws_json,
     from_ws_quote,
 )
+from .quality import QualityIssue, clean, find_issues
 from .schema import EventType, MarketEvent, Side
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "MarketEvent",
@@ -30,6 +31,9 @@ __all__ = [
     "from_csv_quote",
     "Bar",
     "time_bars",
+    "QualityIssue",
+    "find_issues",
+    "clean",
     "canonical_symbol",
     "epoch_to_ns",
     "iso_to_ns",
