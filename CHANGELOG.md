@@ -3,6 +3,13 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.5.0] - 2026-07-30
+
+### Added
+- `resample_bars(bars, interval_ns)` — downsample OHLCV bars to a coarser
+  interval (e.g. 1-minute to 5-minute) with correct OHLC aggregation and
+  volume-weighted VWAP.
+
 ## [0.4.0] - 2026-07-30
 
 ### Added

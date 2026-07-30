@@ -77,6 +77,10 @@ bars[0].open, bars[0].high, bars[0].low, bars[0].close, bars[0].volume, bars[0].
 `time_bars` reduces a stream of trade events into fixed-interval OHLCV `Bar`s
 (with VWAP and trade count), sorting out-of-order input and skipping quotes.
 
+`resample_bars(bars, interval_ns)` downsamples bars to a coarser interval
+(e.g. 1-minute → 5-minute) with correct OHLC aggregation and volume-weighted
+VWAP.
+
 ### Data quality
 
 ```python

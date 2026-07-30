@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, Sequence
 
 from .schema import EventType, MarketEvent
 
@@ -81,5 +81,46 @@ def time_bars(
             start_ns=start, interval_ns=interval_ns,
             open=b["open"], high=b["high"], low=b["low"], close=b["close"],
             volume=b["volume"], trades=b["trades"], vwap=vwap,
+        ))
+    return out
+
+
+def resample_bars(bars: Sequence[Bar], interval_ns: int) -> List[Bar]:
+    """Downsample bars to a coarser ``interval_ns`` (e.g. 1-minute -> 5-minute).
+
+    OHLC is aggregated as open=first, high=max, low=min, close=last; volume and
+    trade counts are summed; VWAP is recombined volume-weighted (exact, since a
+    bar's ``vwap * volume`` is its traded notional). ``interval_ns`` should be a
+    multiple of the input bars' interval.
+    """
+    if interval_ns <= 0:
+        raise ValueError("interval_ns must be positive")
+
+    groups: dict[int, list[Bar]] = {}
+    order: list[int] = []
+    for b in sorted(bars, key=lambda x: x.start_ns):
+        start = (b.start_ns // interval_ns) * interval_ns
+        if start not in groups:
+            groups[start] = []
+            order.append(start)
+        groups[start].append(b)
+
+    out: List[Bar] = []
+    for start in sorted(order):
+        g = groups[start]
+        volume = sum((x.volume for x in g), Decimal(0))
+        notional = sum(
+            (x.vwap * x.volume for x in g if x.vwap is not None), Decimal(0)
+        )
+        vwap = (notional / volume) if volume > 0 else None
+        out.append(Bar(
+            start_ns=start, interval_ns=interval_ns,
+            open=g[0].open,
+            high=max(x.high for x in g),
+            low=min(x.low for x in g),
+            close=g[-1].close,
+            volume=volume,
+            trades=sum(x.trades for x in g),
+            vwap=vwap,
         ))
     return out
