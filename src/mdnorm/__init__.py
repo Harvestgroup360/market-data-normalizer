@@ -5,7 +5,7 @@ into a single, exchange-agnostic :class:`MarketEvent` schema.
 """
 from __future__ import annotations
 
-from .bars import Bar, resample_bars, time_bars
+from .bars import Bar, fill_gaps, resample_bars, time_bars
 from .normalizers import (
     from_csv_quote,
     from_csv_row,
@@ -18,7 +18,7 @@ from .schema import EventType, MarketEvent, Side
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     "MarketEvent",
@@ -32,6 +32,7 @@ __all__ = [
     "Bar",
     "time_bars",
     "resample_bars",
+    "fill_gaps",
     "QualityIssue",
     "find_issues",
     "clean",

@@ -3,6 +3,13 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.6.0] - 2026-07-31
+
+### Added
+- `fill_gaps(bars)` — return a gapless bar series, inserting flat zero-volume
+  bars (OHLC = previous close) for any missing interval. Pairs with
+  `time_bars` and `resample_bars` for a continuous grid.
+
 ## [0.5.0] - 2026-07-30
 
 ### Added

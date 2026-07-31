@@ -81,6 +81,10 @@ bars[0].open, bars[0].high, bars[0].low, bars[0].close, bars[0].volume, bars[0].
 (e.g. 1-minute → 5-minute) with correct OHLC aggregation and volume-weighted
 VWAP.
 
+`fill_gaps(bars)` returns a gapless series, inserting flat zero-volume bars
+(OHLC = previous close) for any interval with no trades — a continuous grid for
+backtests and feature pipelines.
+
 ### Data quality
 
 ```python

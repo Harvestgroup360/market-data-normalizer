@@ -124,3 +124,35 @@ def resample_bars(bars: Sequence[Bar], interval_ns: int) -> List[Bar]:
             vwap=vwap,
         ))
     return out
+
+
+def fill_gaps(bars: Sequence[Bar]) -> List[Bar]:
+    """Return a gapless bar series, inserting flat bars for missing intervals.
+
+    Backtests and feature pipelines usually want a continuous grid. Any
+    interval with no trades is filled with a synthetic bar whose OHLC all equal
+    the previous close, with zero volume/trades and no VWAP. Input is sorted by
+    time; the grid step is taken from the first bar's ``interval_ns``.
+    """
+    if not bars:
+        return []
+
+    ordered = sorted(bars, key=lambda b: b.start_ns)
+    interval = ordered[0].interval_ns
+    out: List[Bar] = []
+    expected = ordered[0].start_ns
+    prev_close: Optional[Decimal] = None
+
+    for b in ordered:
+        while prev_close is not None and b.start_ns > expected:
+            out.append(Bar(
+                start_ns=expected, interval_ns=interval,
+                open=prev_close, high=prev_close, low=prev_close,
+                close=prev_close, volume=Decimal(0), trades=0, vwap=None,
+            ))
+            expected += interval
+        out.append(b)
+        prev_close = b.close
+        expected = b.start_ns + interval
+
+    return out
