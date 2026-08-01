@@ -14,11 +14,12 @@ from .normalizers import (
     from_ws_quote,
 )
 from .quality import QualityIssue, clean, find_issues
+from .records import bar_to_dict, event_to_dict, to_records
 from .schema import EventType, MarketEvent, Side
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 __all__ = [
     "MarketEvent",
@@ -36,6 +37,9 @@ __all__ = [
     "QualityIssue",
     "find_issues",
     "clean",
+    "event_to_dict",
+    "bar_to_dict",
+    "to_records",
     "canonical_symbol",
     "epoch_to_ns",
     "iso_to_ns",

@@ -3,6 +3,13 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.7.0] - 2026-08-01
+
+### Added
+- Serialization: `event_to_dict`, `bar_to_dict` and `to_records` flatten
+  events and bars into plain, JSON-serialisable dicts (Decimals as strings by
+  default, `as_float=True` for numeric output) — ready for pandas / CSV / JSON.
+
 ## [0.6.0] - 2026-07-31
 
 ### Added

@@ -97,6 +97,19 @@ cleaned, issues = clean(events)  # drop bad ticks & invalid rows, keep a report
 `clean` removes price outliers and non-positive price/size records and returns
 the surviving events plus everything it flagged.
 
+### Serialization
+
+```python
+from mdnorm import to_records
+
+to_records(events)                 # list of flat dicts (Decimals as strings)
+to_records(bars, as_float=True)    # numeric output for DataFrames
+```
+
+`to_records` (and `event_to_dict` / `bar_to_dict`) flatten events and bars into
+plain, JSON-serialisable dicts — drop straight into `pandas.DataFrame`, a
+`csv.DictWriter`, or `json.dumps`.
+
 ## The unified schema
 
 ```python
