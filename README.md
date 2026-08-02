@@ -110,6 +110,18 @@ to_records(bars, as_float=True)    # numeric output for DataFrames
 plain, JSON-serialisable dicts — drop straight into `pandas.DataFrame`, a
 `csv.DictWriter`, or `json.dumps`.
 
+### Consolidating streams
+
+```python
+from mdnorm import merge_streams, dedupe
+
+timeline = dedupe(merge_streams(binance_events, coinbase_events))
+```
+
+`merge_streams` interleaves multiple venue feeds into one timestamp-ordered
+timeline; `dedupe` drops exact duplicate events left behind by reconnects and
+replays.
+
 ## The unified schema
 
 ```python

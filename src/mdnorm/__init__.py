@@ -16,10 +16,11 @@ from .normalizers import (
 from .quality import QualityIssue, clean, find_issues
 from .records import bar_to_dict, event_to_dict, to_records
 from .schema import EventType, MarketEvent, Side
+from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 __all__ = [
     "MarketEvent",
@@ -40,6 +41,8 @@ __all__ = [
     "event_to_dict",
     "bar_to_dict",
     "to_records",
+    "merge_streams",
+    "dedupe",
     "canonical_symbol",
     "epoch_to_ns",
     "iso_to_ns",

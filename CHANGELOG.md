@@ -3,6 +3,13 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.8.0] - 2026-08-02
+
+### Added
+- Stream consolidation: `merge_streams(*streams)` merges multiple venue feeds
+  into one timestamp-ordered timeline (stable), and `dedupe(events)` drops exact
+  duplicate events from reconnects/replays, preserving first-seen order.
+
 ## [0.7.0] - 2026-08-01
 
 ### Added
