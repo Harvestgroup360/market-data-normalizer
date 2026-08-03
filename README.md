@@ -122,6 +122,18 @@ timeline = dedupe(merge_streams(binance_events, coinbase_events))
 timeline; `dedupe` drops exact duplicate events left behind by reconnects and
 replays.
 
+### CSV files
+
+```python
+from mdnorm import read_csv_trades, write_records_csv
+
+events = read_csv_trades("trades.csv", venue="coinbase")   # file -> events
+write_records_csv(bars, "bars.csv", as_float=True)          # events/bars -> file
+```
+
+`read_csv_trades` parses a whole CSV of trades into normalized events;
+`write_records_csv` writes events or bars back out. Standard library only.
+
 ## The unified schema
 
 ```python

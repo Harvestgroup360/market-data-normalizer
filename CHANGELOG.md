@@ -3,6 +3,13 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [0.9.0] - 2026-08-03
+
+### Added
+- File-level CSV I/O: `read_csv_trades(path, ...)` reads a CSV of trades into
+  normalized events, and `write_records_csv(items, path)` writes events/bars
+  to a CSV (union of fields). Standard library only.
+
 ## [0.8.0] - 2026-08-02
 
 ### Added
