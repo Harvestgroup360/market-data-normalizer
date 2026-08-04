@@ -3,6 +3,25 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.0.0] - 2026-08-04
+
+### Added
+- `Pipeline` — declarative, reusable processing chains: compose `dedupe`,
+  `clean`, `time_bars`, `resample`, `fill_gaps` (plus custom steps via
+  `apply`) and run the same pipeline across venues and files. Quality
+  reports from `clean` are exposed on `pipeline.last_issues`.
+- NDJSON / JSON Lines I/O: `write_jsonl` (events and bars, one compact JSON
+  object per line) and `read_jsonl_events` / `event_from_dict` for lossless
+  round-trips. Standard library only.
+- Command-line interface: `mdnorm bars`, `mdnorm quality` and
+  `mdnorm convert` (CSV <-> NDJSON), with human-friendly intervals
+  (`30s`, `1m`, `4h`, `1d`). Installed as the `mdnorm` console script;
+  also runnable as `python -m mdnorm`.
+
+### Changed
+- Project status raised to stable (`Development Status :: 5`); the public
+  API of `0.x` is carried over unchanged.
+
 ## [0.9.0] - 2026-08-03
 
 ### Added

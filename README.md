@@ -134,6 +134,46 @@ write_records_csv(bars, "bars.csv", as_float=True)          # events/bars -> fil
 `read_csv_trades` parses a whole CSV of trades into normalized events;
 `write_records_csv` writes events or bars back out. Standard library only.
 
+### NDJSON / JSON Lines
+
+```python
+from mdnorm import write_jsonl, read_jsonl_events
+
+write_jsonl(events, "events.jsonl")          # one JSON object per line
+events2 = read_jsonl_events("events.jsonl")  # lossless round-trip
+```
+
+### Pipelines
+
+Declare a processing chain once, reuse it everywhere:
+
+```python
+from decimal import Decimal
+from mdnorm import Pipeline
+
+pipe = (
+    Pipeline()
+    .dedupe()
+    .clean(max_return=Decimal("0.1"))
+    .time_bars(60_000_000_000)   # 1-minute bars
+    .fill_gaps()
+)
+bars = pipe.run(events)
+print(pipe.last_issues)          # quality report from clean()
+```
+
+### Command line
+
+The common conversions ship as a zero-dependency CLI:
+
+```console
+$ mdnorm bars trades.csv --venue binance --interval 1m -o bars.csv
+$ mdnorm quality trades.csv --max-gap 5m
+$ mdnorm convert trades.csv -o trades.jsonl
+```
+
+Also available as `python -m mdnorm`.
+
 ## The unified schema
 
 ```python
