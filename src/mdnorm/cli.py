@@ -48,7 +48,9 @@ def parse_interval(text: str) -> int:
 
 
 def _is_jsonl(path: str) -> bool:
-    return path.lower().endswith((".jsonl", ".ndjson"))
+    return path.lower().endswith(
+        (".jsonl", ".ndjson", ".jsonl.gz", ".ndjson.gz")
+    )
 
 
 def _read_events(args: argparse.Namespace) -> List[MarketEvent]:
@@ -64,7 +66,7 @@ def _write(items: list, path: str, *, as_float: bool) -> int:
 
 
 def _add_input_args(p: argparse.ArgumentParser) -> None:
-    p.add_argument("input", help="input file (.csv, .jsonl, .ndjson)")
+    p.add_argument("input", help="input file (.csv, .jsonl, .ndjson; .gz accepted)")
     p.add_argument(
         "--venue", default="csv",
         help="venue label stamped on events read from CSV (default: csv)",
@@ -136,7 +138,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_bars = sub.add_parser("bars", help="aggregate trades into OHLCV bars")
     _add_input_args(p_bars)
     p_bars.add_argument("-o", "--output", required=True,
-                        help="output file (.csv, .jsonl, .ndjson)")
+                        help="output file (.csv, .jsonl, .ndjson; .gz accepted)")
     p_bars.add_argument("--interval", type=parse_interval, required=True,
                         help="bar interval, e.g. 30s, 1m, 4h, 1d")
     p_bars.add_argument("--dedupe", action="store_true",
@@ -164,7 +166,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_c = sub.add_parser("convert", help="convert between CSV and NDJSON")
     _add_input_args(p_c)
     p_c.add_argument("-o", "--output", required=True,
-                     help="output file (.csv, .jsonl, .ndjson)")
+                     help="output file (.csv, .jsonl, .ndjson; .gz accepted)")
     p_c.add_argument("--dedupe", action="store_true",
                      help="drop exact duplicate events")
     p_c.add_argument("--as-float", action="store_true",

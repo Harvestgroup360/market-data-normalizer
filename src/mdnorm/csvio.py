@@ -8,9 +8,10 @@ library only.
 from __future__ import annotations
 
 import csv
-from typing import Iterable, List, Mapping, Optional, Union
+from typing import Iterable, Iterator, List, Mapping, Optional, Union
 
 from .bars import Bar
+from .fileio import open_text
 from .normalizers import from_csv_row
 from .records import to_records
 from .schema import MarketEvent
@@ -27,14 +28,26 @@ def read_csv_trades(
 
     Columns are mapped and parsed by :func:`from_csv_row`; ``mapping`` renames
     columns and ``ts_unit`` selects epoch parsing (otherwise ISO-8601).
+    Transparently reads ``.csv.gz``.
     """
-    out: List[MarketEvent] = []
-    with open(path, newline="", encoding="utf-8") as f:
+    return list(iter_csv_trades(path, venue=venue, mapping=mapping, ts_unit=ts_unit))
+
+
+def iter_csv_trades(
+    path: str,
+    *,
+    venue: str,
+    mapping: Optional[Mapping[str, str]] = None,
+    ts_unit: Optional[str] = None,
+) -> Iterator[MarketEvent]:
+    """Stream a CSV file of trades as normalized events, one at a time.
+
+    Lazy counterpart of :func:`read_csv_trades` for files that should not
+    be loaded into memory at once. Transparently reads ``.csv.gz``.
+    """
+    with open_text(path) as f:
         for row in csv.DictReader(f):
-            out.append(
-                from_csv_row(row, venue=venue, mapping=mapping, ts_unit=ts_unit)
-            )
-    return out
+            yield from_csv_row(row, venue=venue, mapping=mapping, ts_unit=ts_unit)
 
 
 def write_records_csv(
@@ -50,7 +63,7 @@ def write_records_csv(
     """
     records = to_records(items, as_float=as_float)
     if not records:
-        open(path, "w", encoding="utf-8").close()
+        open_text(path, "w").close()
         return 0
 
     fieldnames: List[str] = []
@@ -59,7 +72,7 @@ def write_records_csv(
             if k not in fieldnames:
                 fieldnames.append(k)
 
-    with open(path, "w", newline="", encoding="utf-8") as f:
+    with open_text(path, "w") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, restval="")
         writer.writeheader()
         writer.writerows(records)

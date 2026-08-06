@@ -3,6 +3,17 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.1.0] - 2026-08-05
+
+### Added
+- Transparent gzip support across all file I/O: any ``.gz`` path
+  (``.csv.gz``, ``.jsonl.gz``, ``.ndjson.gz``) is compressed/decompressed
+  automatically in ``read_csv_trades`` / ``write_records_csv`` /
+  ``write_jsonl`` / ``read_jsonl_events`` and the CLI. Standard library only.
+- Streaming readers for large files: ``iter_csv_trades`` and
+  ``iter_jsonl_events`` yield normalized events one at a time instead of
+  loading the whole file into memory.
+
 ## [1.0.0] - 2026-08-04
 
 ### Added

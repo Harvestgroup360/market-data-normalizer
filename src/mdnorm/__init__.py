@@ -6,8 +6,8 @@ into a single, exchange-agnostic :class:`MarketEvent` schema.
 from __future__ import annotations
 
 from .bars import Bar, fill_gaps, resample_bars, time_bars
-from .csvio import read_csv_trades, write_records_csv
-from .jsonl import event_from_dict, read_jsonl_events, write_jsonl
+from .csvio import iter_csv_trades, read_csv_trades, write_records_csv
+from .jsonl import event_from_dict, iter_jsonl_events, read_jsonl_events, write_jsonl
 from .normalizers import (
     from_csv_quote,
     from_csv_row,
@@ -23,7 +23,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 __all__ = [
     "MarketEvent",
@@ -47,8 +47,10 @@ __all__ = [
     "merge_streams",
     "dedupe",
     "read_csv_trades",
+    "iter_csv_trades",
     "write_records_csv",
     "read_jsonl_events",
+    "iter_jsonl_events",
     "write_jsonl",
     "event_from_dict",
     "Pipeline",

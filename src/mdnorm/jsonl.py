@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import json
 from decimal import Decimal, InvalidOperation
-from typing import Iterable, List, Optional, Union
+from typing import Iterable, Iterator, List, Optional, Union
 
 from .bars import Bar
+from .fileio import open_text
 from .records import to_records
 from .schema import EventType, MarketEvent, Side
 
@@ -30,7 +31,7 @@ def write_jsonl(
     ``as_float=True`` for numeric output).
     """
     n = 0
-    with open(path, "w", encoding="utf-8") as f:
+    with open_text(path, "w") as f:
         for r in to_records(items, as_float=as_float):
             f.write(json.dumps(r, separators=(",", ":")))
             f.write("\n")
@@ -77,8 +78,16 @@ def read_jsonl_events(path: str) -> List[MarketEvent]:
     Blank lines are skipped. Malformed lines raise :class:`ValueError`
     with the offending line number.
     """
-    out: List[MarketEvent] = []
-    with open(path, encoding="utf-8") as f:
+    return list(iter_jsonl_events(path))
+
+
+def iter_jsonl_events(path: str) -> Iterator[MarketEvent]:
+    """Stream an NDJSON file of events, one :class:`MarketEvent` at a time.
+
+    Lazy counterpart of :func:`read_jsonl_events`; transparently reads
+    ``.jsonl.gz`` / ``.ndjson.gz``.
+    """
+    with open_text(path) as f:
         for line_no, line in enumerate(f, 1):
             line = line.strip()
             if not line:
@@ -89,5 +98,4 @@ def read_jsonl_events(path: str) -> List[MarketEvent]:
                 raise ValueError(f"line {line_no}: invalid JSON ({exc})") from exc
             if not isinstance(d, dict):
                 raise ValueError(f"line {line_no}: expected a JSON object")
-            out.append(event_from_dict(d))
-    return out
+            yield event_from_dict(d)

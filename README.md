@@ -141,6 +141,10 @@ from mdnorm import write_jsonl, read_jsonl_events
 
 write_jsonl(events, "events.jsonl")          # one JSON object per line
 events2 = read_jsonl_events("events.jsonl")  # lossless round-trip
+
+# large files: stream lazily, .gz handled transparently
+for e in iter_jsonl_events("dump.jsonl.gz"):
+    ...
 ```
 
 ### Pipelines
