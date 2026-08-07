@@ -156,3 +156,93 @@ def fill_gaps(bars: Sequence[Bar]) -> List[Bar]:
         expected = b.start_ns + interval
 
     return out
+
+
+# -- event-driven bars ------------------------------------------------------
+
+def _sorted_trades(events: Iterable[MarketEvent]) -> List[MarketEvent]:
+    return sorted(
+        (e for e in events
+         if e.event_type is EventType.TRADE and e.price is not None),
+        key=lambda e: e.ts_ns,
+    )
+
+
+def _close_bar(acc: dict) -> Bar:
+    vwap = (acc["notional"] / acc["volume"]) if acc["volume"] > 0 else None
+    span = acc["last_ts"] - acc["first_ts"]
+    return Bar(
+        start_ns=acc["first_ts"], interval_ns=span,
+        open=acc["open"], high=acc["high"], low=acc["low"],
+        close=acc["close"], volume=acc["volume"],
+        trades=acc["trades"], vwap=vwap,
+    )
+
+
+def _event_bars(events, threshold_reached) -> List[Bar]:
+    """Shared engine for count/volume/dollar bars.
+
+    Accumulates sorted trades into a bar until ``threshold_reached(acc)``
+    is true after adding a trade, then closes it and starts the next one.
+    For event-driven bars ``start_ns`` is the first trade's timestamp and
+    ``interval_ns`` is the realized span (``end_ns`` = last trade's time).
+    A final partial bar is emitted if any trades remain.
+    """
+    out: List[Bar] = []
+    acc: Optional[dict] = None
+    for e in _sorted_trades(events):
+        size = e.size if e.size is not None else Decimal(0)
+        if acc is None:
+            acc = {"first_ts": e.ts_ns, "last_ts": e.ts_ns,
+                   "open": e.price, "high": e.price, "low": e.price,
+                   "close": e.price, "volume": size,
+                   "notional": e.price * size, "trades": 1}
+        else:
+            if e.price > acc["high"]:
+                acc["high"] = e.price
+            if e.price < acc["low"]:
+                acc["low"] = e.price
+            acc["close"] = e.price
+            acc["last_ts"] = e.ts_ns
+            acc["volume"] += size
+            acc["notional"] += e.price * size
+            acc["trades"] += 1
+        if threshold_reached(acc):
+            out.append(_close_bar(acc))
+            acc = None
+    if acc is not None:
+        out.append(_close_bar(acc))
+    return out
+
+
+def count_bars(events: Iterable[MarketEvent], every: int) -> List[Bar]:
+    """Aggregate trades into bars of exactly ``every`` trades (tick bars).
+
+    The trailing partial bar (fewer than ``every`` trades) is included.
+    """
+    if every <= 0:
+        raise ValueError("every must be positive")
+    return _event_bars(events, lambda acc: acc["trades"] >= every)
+
+
+def volume_bars(events: Iterable[MarketEvent], min_volume: Decimal) -> List[Bar]:
+    """Aggregate trades into bars that each hold >= ``min_volume`` base units.
+
+    A bar closes on the trade that pushes cumulative volume to the
+    threshold, so bars can slightly overshoot it. The trailing partial bar
+    is included.
+    """
+    if min_volume <= 0:
+        raise ValueError("min_volume must be positive")
+    return _event_bars(events, lambda acc: acc["volume"] >= min_volume)
+
+
+def dollar_bars(events: Iterable[MarketEvent], min_notional: Decimal) -> List[Bar]:
+    """Aggregate trades into bars of >= ``min_notional`` traded value.
+
+    Notional is ``price * size`` summed per bar; the closing trade may
+    overshoot the threshold. The trailing partial bar is included.
+    """
+    if min_notional <= 0:
+        raise ValueError("min_notional must be positive")
+    return _event_bars(events, lambda acc: acc["notional"] >= min_notional)

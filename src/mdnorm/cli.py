@@ -19,7 +19,7 @@ from decimal import Decimal
 from typing import List, Optional
 
 from . import __version__
-from .bars import fill_gaps, time_bars
+from .bars import count_bars, dollar_bars, fill_gaps, time_bars, volume_bars
 from .csvio import read_csv_trades, write_records_csv
 from .jsonl import read_jsonl_events, write_jsonl
 from .quality import clean, find_issues
@@ -86,9 +86,16 @@ def _cmd_bars(args: argparse.Namespace) -> int:
         if issues:
             print(f"clean: dropped/flagged {len(issues)} issue(s)",
                   file=sys.stderr)
-    bars = time_bars(events, args.interval)
-    if args.fill_gaps:
-        bars = fill_gaps(bars)
+    if args.interval is not None:
+        bars = time_bars(events, args.interval)
+        if args.fill_gaps:
+            bars = fill_gaps(bars)
+    elif args.every_trades is not None:
+        bars = count_bars(events, args.every_trades)
+    elif args.every_volume is not None:
+        bars = volume_bars(events, Decimal(args.every_volume))
+    else:
+        bars = dollar_bars(events, Decimal(args.every_notional))
     n = _write(bars, args.output, as_float=args.as_float)
     print(f"wrote {n} bar(s) -> {args.output}")
     return 0
@@ -139,8 +146,15 @@ def build_parser() -> argparse.ArgumentParser:
     _add_input_args(p_bars)
     p_bars.add_argument("-o", "--output", required=True,
                         help="output file (.csv, .jsonl, .ndjson; .gz accepted)")
-    p_bars.add_argument("--interval", type=parse_interval, required=True,
-                        help="bar interval, e.g. 30s, 1m, 4h, 1d")
+    how = p_bars.add_mutually_exclusive_group(required=True)
+    how.add_argument("--interval", type=parse_interval,
+                     help="time-bar interval, e.g. 30s, 1m, 4h, 1d")
+    how.add_argument("--every-trades", type=int, metavar="N",
+                     help="tick bars: one bar per N trades")
+    how.add_argument("--every-volume", metavar="V",
+                     help="volume bars: close a bar at >= V base units")
+    how.add_argument("--every-notional", metavar="X",
+                     help="dollar bars: close a bar at >= X traded value")
     p_bars.add_argument("--dedupe", action="store_true",
                         help="drop exact duplicate events first")
     p_bars.add_argument("--clean", action="store_true",

@@ -10,9 +10,12 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Callable, List, Sequence, Tuple
 
+from .bars import count_bars as _count_bars
+from .bars import dollar_bars as _dollar_bars
 from .bars import fill_gaps as _fill_gaps
 from .bars import resample_bars as _resample_bars
 from .bars import time_bars as _time_bars
+from .bars import volume_bars as _volume_bars
 from .quality import QualityIssue
 from .quality import clean as _clean
 from .schema import MarketEvent
@@ -72,6 +75,27 @@ class Pipeline:
         """Aggregate trade events into fixed-interval OHLCV bars."""
         self._steps.append(
             ("time_bars", lambda data: _time_bars(data, interval_ns))
+        )
+        return self
+
+    def count_bars(self, every: int) -> "Pipeline":
+        """Aggregate trades into tick bars of ``every`` trades each."""
+        self._steps.append(
+            ("count_bars", lambda data: _count_bars(data, every))
+        )
+        return self
+
+    def volume_bars(self, min_volume: Decimal) -> "Pipeline":
+        """Aggregate trades into volume bars of >= ``min_volume``."""
+        self._steps.append(
+            ("volume_bars", lambda data: _volume_bars(data, min_volume))
+        )
+        return self
+
+    def dollar_bars(self, min_notional: Decimal) -> "Pipeline":
+        """Aggregate trades into dollar bars of >= ``min_notional``."""
+        self._steps.append(
+            ("dollar_bars", lambda data: _dollar_bars(data, min_notional))
         )
         return self
 

@@ -5,7 +5,15 @@ into a single, exchange-agnostic :class:`MarketEvent` schema.
 """
 from __future__ import annotations
 
-from .bars import Bar, fill_gaps, resample_bars, time_bars
+from .bars import (
+    Bar,
+    count_bars,
+    dollar_bars,
+    fill_gaps,
+    resample_bars,
+    time_bars,
+    volume_bars,
+)
 from .csvio import iter_csv_trades, read_csv_trades, write_records_csv
 from .jsonl import event_from_dict, iter_jsonl_events, read_jsonl_events, write_jsonl
 from .normalizers import (
@@ -23,7 +31,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 __all__ = [
     "MarketEvent",
@@ -38,6 +46,9 @@ __all__ = [
     "time_bars",
     "resample_bars",
     "fill_gaps",
+    "count_bars",
+    "volume_bars",
+    "dollar_bars",
     "QualityIssue",
     "find_issues",
     "clean",

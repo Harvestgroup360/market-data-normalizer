@@ -3,6 +3,18 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.2.0] - 2026-08-07
+
+### Added
+- Event-driven bars, the standard alternatives to time bars: ``count_bars``
+  (one bar per N trades), ``volume_bars`` (close at a cumulative base-unit
+  threshold) and ``dollar_bars`` (close at a traded-notional threshold).
+  For these bars ``start_ns`` is the first trade's timestamp and
+  ``interval_ns`` the realized span; the trailing partial bar is included.
+- Matching ``Pipeline`` steps (``.count_bars()``, ``.volume_bars()``,
+  ``.dollar_bars()``) and CLI flags (``--every-trades``, ``--every-volume``,
+  ``--every-notional``) as alternatives to ``--interval``.
+
 ## [1.1.0] - 2026-08-05
 
 ### Added

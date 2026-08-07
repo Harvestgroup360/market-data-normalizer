@@ -85,6 +85,19 @@ VWAP.
 (OHLC = previous close) for any interval with no trades — a continuous grid for
 backtests and feature pipelines.
 
+### Event-driven bars
+
+Time bars are not the only clock. Sample by activity instead:
+
+```python
+from decimal import Decimal
+from mdnorm import count_bars, volume_bars, dollar_bars
+
+count_bars(events, every=500)                       # tick bars
+volume_bars(events, min_volume=Decimal("100"))      # volume bars
+dollar_bars(events, min_notional=Decimal("1e6"))    # dollar bars
+```
+
 ### Data quality
 
 ```python
