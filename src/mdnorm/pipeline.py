@@ -19,6 +19,8 @@ from .bars import volume_bars as _volume_bars
 from .quality import QualityIssue
 from .quality import clean as _clean
 from .schema import MarketEvent
+from .sessions import Session
+from .sessions import filter_session as _filter_session
 from .streams import dedupe as _dedupe
 
 Step = Callable[[list], list]
@@ -67,6 +69,16 @@ class Pipeline:
             return cleaned
 
         self._steps.append(("clean", step))
+        return self
+
+    def session(self, session: Session) -> "Pipeline":
+        """Keep only items inside a trading session (see :mod:`mdnorm.sessions`).
+
+        Works on events before aggregation and on bars after it.
+        """
+        self._steps.append(
+            ("session", lambda data: _filter_session(data, session))
+        )
         return self
 
     # -- bar-level steps ---------------------------------------------------

@@ -98,6 +98,26 @@ volume_bars(events, min_volume=Decimal("100"))      # volume bars
 dollar_bars(events, min_notional=Decimal("1e6"))    # dollar bars
 ```
 
+### Trading sessions
+
+Filter a feed down to the hours that matter, with daylight saving handled
+for you:
+
+```python
+from mdnorm import US_EQUITY_RTH, filter_session, group_by_session_date
+
+rth = filter_session(events, US_EQUITY_RTH)        # 09:30-16:00 New York
+by_day = group_by_session_date(events, US_EQUITY_RTH)
+```
+
+Overnight windows (a session that opens at 18:00 and closes at 17:00 the
+next day) are supported, and `session_date` keeps a whole night in one
+bucket. From the command line:
+
+```console
+$ mdnorm bars trades.csv --interval 5m --session 09:30-16:00 --tz America/New_York -o rth.csv
+```
+
 ### Data quality
 
 ```python

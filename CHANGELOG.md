@@ -3,6 +3,24 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.3.0] - 2026-08-08
+
+### Added
+- Trading sessions and calendar filtering (`mdnorm.sessions`): a `Session`
+  describes a recurring local-time window — `in_session`, `filter_session`,
+  `session_date` and `group_by_session_date` decide what belongs to it.
+  Handles intraday windows, overnight sessions that cross midnight, and
+  daylight-saving transitions via `zoneinfo`; ready-made `US_EQUITY_RTH`
+  and `US_FUTURES_OVERNIGHT` are included.
+- Matching `Pipeline` step (`.session(...)`) and CLI flags `--session
+  HH:MM-HH:MM` and `--tz ZONE`, applied before aggregation.
+
+### Fixed
+- `canonical_symbol` mangled single-listed instruments: tickers without a
+  quote leg were split by a blind 3-character rule, turning `AAPL` into
+  `A-APL`. Equities, ETFs and indices now keep their ticker (`AAPL`,
+  `SPY`, `BRK.B`), while traded pairs are unchanged.
+
 ## [1.2.0] - 2026-08-07
 
 ### Added

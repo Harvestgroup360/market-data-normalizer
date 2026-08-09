@@ -27,11 +27,22 @@ from .pipeline import Pipeline
 from .quality import QualityIssue, clean, find_issues
 from .records import bar_to_dict, event_to_dict, to_records
 from .schema import EventType, MarketEvent, Side
+from .sessions import (
+    US_EQUITY_RTH,
+    US_FUTURES_OVERNIGHT,
+    WEEKDAYS,
+    Session,
+    filter_session,
+    group_by_session_date,
+    in_session,
+    parse_session,
+    session_date,
+)
 from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 __all__ = [
     "MarketEvent",
@@ -49,6 +60,15 @@ __all__ = [
     "count_bars",
     "volume_bars",
     "dollar_bars",
+    "Session",
+    "in_session",
+    "filter_session",
+    "session_date",
+    "group_by_session_date",
+    "parse_session",
+    "WEEKDAYS",
+    "US_EQUITY_RTH",
+    "US_FUTURES_OVERNIGHT",
     "QualityIssue",
     "find_issues",
     "clean",

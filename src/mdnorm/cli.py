@@ -5,6 +5,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm bars trades.csv --venue binance --interval 1m -o bars.csv
     mdnorm quality trades.csv --venue binance --max-gap 5m
     mdnorm convert trades.csv --venue binance -o trades.jsonl
+    mdnorm bars trades.csv --interval 5m --session 09:30-16:00 --tz America/New_York -o rth.csv
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -24,6 +25,7 @@ from .csvio import read_csv_trades, write_records_csv
 from .jsonl import read_jsonl_events, write_jsonl
 from .quality import clean, find_issues
 from .schema import MarketEvent
+from .sessions import filter_session, parse_session
 from .streams import dedupe
 
 _UNIT_NS = {
@@ -55,8 +57,20 @@ def _is_jsonl(path: str) -> bool:
 
 def _read_events(args: argparse.Namespace) -> List[MarketEvent]:
     if _is_jsonl(args.input):
-        return read_jsonl_events(args.input)
-    return read_csv_trades(args.input, venue=args.venue, ts_unit=args.ts_unit)
+        events = read_jsonl_events(args.input)
+    else:
+        events = read_csv_trades(
+            args.input, venue=args.venue, ts_unit=args.ts_unit
+        )
+    if getattr(args, "session", None):
+        session = parse_session(args.session, args.tz)
+        kept = filter_session(events, session)
+        dropped = len(events) - len(kept)
+        if dropped:
+            print(f"session: dropped {dropped} event(s) outside "
+                  f"{args.session} {args.tz}", file=sys.stderr)
+        events = kept
+    return events
 
 
 def _write(items: list, path: str, *, as_float: bool) -> int:
@@ -74,6 +88,16 @@ def _add_input_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--ts-unit", choices=["s", "ms", "us", "ns"], default=None,
         help="parse CSV timestamps as epoch in this unit (default: ISO-8601)",
+    )
+    p.add_argument(
+        "--session", metavar="HH:MM-HH:MM", default=None,
+        help="keep only trades inside this local trading window "
+             "(e.g. 09:30-16:00); a window that ends before it starts "
+             "is treated as overnight",
+    )
+    p.add_argument(
+        "--tz", default="UTC", metavar="ZONE",
+        help="timezone for --session, e.g. America/New_York (default: UTC)",
     )
 
 
