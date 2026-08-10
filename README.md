@@ -3,6 +3,7 @@
 [![CI](https://github.com/Harvestgroup360/market-data-normalizer/actions/workflows/ci.yml/badge.svg)](https://github.com/Harvestgroup360/market-data-normalizer/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](pyproject.toml)
+[![PyPI](https://img.shields.io/pypi/v/market-data-normalizer.svg)](https://pypi.org/project/market-data-normalizer/)
 
 Normalize heterogeneous market-data feeds — CSV tick dumps, exchange
 WebSocket JSON, and FIX — into a single, exchange-agnostic event schema, so
@@ -22,9 +23,18 @@ your stack one clean type.
 
 ## Install
 
-```bash
-pip install -e .
+```console
+pip install market-data-normalizer
 ```
+
+The distribution is named `market-data-normalizer`; the import name is
+`mdnorm`:
+
+```python
+import mdnorm
+```
+
+Pure Python, no runtime dependencies, Python 3.10+.
 
 ## Quick start
 
