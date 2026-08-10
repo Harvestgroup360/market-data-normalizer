@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.3.1] - 2026-08-10
+
+### Changed
+- Packaging: the project is now published on PyPI as
+  `market-data-normalizer` (`pip install market-data-normalizer`; the
+  import name stays `mdnorm`). Added Python version classifiers, project
+  URLs for the changelog and issue tracker, and an install section in the
+  README. Releases are published from CI via PyPI Trusted Publishing, so
+  no long-lived API token exists. No library code changed in this release.
+
 ## [1.3.0] - 2026-08-08
 
 ### Added
