@@ -3,6 +3,31 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.4.0] - 2026-08-11
+
+### Added
+- Corporate actions and contract rolls (`mdnorm.adjust`): back-adjust a
+  price series for stock splits, cash dividends and futures rolls so the
+  discontinuities they create stop reading as returns. `split`, `dividend`
+  and `roll` build the actions; `adjust_events` and `adjust_bars` apply
+  them; `adjustment_at` reports the factors in force at any timestamp.
+- Both conventions are supported: `AdjustMethod.RATIO` (default, preserves
+  returns and keeps prices positive) and `AdjustMethod.DIFFERENCE`
+  (preserves price differences, the usual choice for futures).
+- Splits scale size and volume as well as price. Dividends resolve their
+  reference price from the last print before the ex-date when one is not
+  supplied. Adjustment applies strictly before an action's timestamp, so
+  the ex-date's own prints are untouched.
+- `read_actions_csv` reads actions from a CSV file (`ts,kind,value,
+  ref_price`), with the offending line number reported on bad input.
+- Matching `Pipeline` step (`.adjust(...)`, dispatching on events or bars)
+  and CLI flags `--actions FILE` and `--adjust ratio|difference`.
+
+### Changed
+- Adjustment factors compose as exact rationals rather than decimals. A
+  1-for-2 followed by a 1-for-3 now restates 600 to exactly 100; carrying
+  the intermediate factors as `Decimal` produced 99.99999999999999999999999996.
+
 ## [1.3.1] - 2026-08-10
 
 ### Changed

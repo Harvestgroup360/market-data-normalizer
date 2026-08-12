@@ -6,6 +6,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm quality trades.csv --venue binance --max-gap 5m
     mdnorm convert trades.csv --venue binance -o trades.jsonl
     mdnorm bars trades.csv --interval 5m --session 09:30-16:00 --tz America/New_York -o rth.csv
+    mdnorm bars trades.csv --interval 1d --actions splits.csv -o adjusted.csv
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -20,6 +21,7 @@ from decimal import Decimal
 from typing import List, Optional
 
 from . import __version__
+from .adjust import AdjustMethod, adjust_events, read_actions_csv
 from .bars import count_bars, dollar_bars, fill_gaps, time_bars, volume_bars
 from .csvio import read_csv_trades, write_records_csv
 from .jsonl import read_jsonl_events, write_jsonl
@@ -70,7 +72,22 @@ def _read_events(args: argparse.Namespace) -> List[MarketEvent]:
             print(f"session: dropped {dropped} event(s) outside "
                   f"{args.session} {args.tz}", file=sys.stderr)
         events = kept
+    actions = _load_actions(args)
+    if actions:
+        events = adjust_events(
+            events, actions, method=AdjustMethod(args.adjust)
+        )
+        print(f"adjust: applied {len(actions)} corporate action(s) to events",
+              file=sys.stderr)
     return events
+
+
+def _load_actions(args: argparse.Namespace) -> list:
+    """Read --actions, if given. Returns an empty list when absent."""
+    path = getattr(args, "actions", None)
+    if not path:
+        return []
+    return read_actions_csv(path, ts_unit=args.ts_unit)
 
 
 def _write(items: list, path: str, *, as_float: bool) -> int:
@@ -98,6 +115,15 @@ def _add_input_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--tz", default="UTC", metavar="ZONE",
         help="timezone for --session, e.g. America/New_York (default: UTC)",
+    )
+    p.add_argument(
+        "--actions", metavar="FILE", default=None,
+        help="CSV of splits, dividends and contract rolls to back-adjust for "
+             "(columns: timestamp,kind,value[,ref_price])",
+    )
+    p.add_argument(
+        "--adjust", choices=["ratio", "difference"], default="ratio",
+        help="back-adjustment convention for --actions (default: ratio)",
     )
 
 

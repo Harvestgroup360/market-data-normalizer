@@ -10,6 +10,9 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Callable, List, Sequence, Tuple
 
+from .adjust import Action, AdjustMethod
+from .adjust import adjust_bars as _adjust_bars
+from .adjust import adjust_events as _adjust_events
 from .bars import count_bars as _count_bars
 from .bars import dollar_bars as _dollar_bars
 from .bars import fill_gaps as _fill_gaps
@@ -79,6 +82,26 @@ class Pipeline:
         self._steps.append(
             ("session", lambda data: _filter_session(data, session))
         )
+        return self
+
+    def adjust(
+        self,
+        actions: Sequence[Action],
+        *,
+        method: AdjustMethod = AdjustMethod.RATIO,
+    ) -> "Pipeline":
+        """Back-adjust for splits, dividends and rolls (:mod:`mdnorm.adjust`).
+
+        Works on events before aggregation and on bars after it; the step
+        dispatches on what it is handed.
+        """
+
+        def step(data: list) -> list:
+            if data and isinstance(data[0], MarketEvent):
+                return _adjust_events(data, actions, method=method)
+            return _adjust_bars(data, actions, method=method)
+
+        self._steps.append(("adjust", step))
         return self
 
     # -- bar-level steps ---------------------------------------------------

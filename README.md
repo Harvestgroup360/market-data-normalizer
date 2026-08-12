@@ -128,6 +128,56 @@ bucket. From the command line:
 $ mdnorm bars trades.csv --interval 5m --session 09:30-16:00 --tz America/New_York -o rth.csv
 ```
 
+### Corporate actions and contract rolls
+
+A raw price series is not continuous. A 4-for-1 split divides the printed
+price by four overnight, a cash dividend drops it by the amount paid, and a
+futures roll steps it by the spread between the two contracts. None of them
+are market moves, but all of them look like returns:
+
+```python
+from decimal import Decimal
+from mdnorm import adjust_bars, split, dividend, roll, iso_to_ns
+
+actions = [
+    split(iso_to_ns("2026-06-06T00:00:00Z"), Decimal("4")),
+    dividend(iso_to_ns("2026-05-09T00:00:00Z"), Decimal("0.25")),
+]
+clean = adjust_bars(bars, actions)
+```
+
+Back-adjustment leaves the most recent segment at the prices that actually
+printed and restates everything before each event, so the joins are seamless:
+
+```text
+raw closes    500   502   498   504  │  126  125.5   127  126.5
+raw returns       +0.4% -0.8% +1.2%  │ -75.0% -0.4% +1.2% -0.4%
+                                     ^ the split, not a crash
+
+adj closes    125  125.5 124.5  126  │  126  125.5   127  126.5
+adj returns       +0.4% -0.8% +1.2%  │  +0.0% -0.4% +1.2% -0.4%
+```
+
+Splits scale volume as well as price. Dividends take their reference price
+from the last print before the ex-date unless you pass one. Rolls support
+both conventions — `AdjustMethod.RATIO` (default, preserves returns) and
+`AdjustMethod.DIFFERENCE` (preserves price differences, the usual choice for
+futures). Factors are composed as exact rationals, so a 1-for-2 followed by a
+1-for-3 restates 600 to exactly 100 rather than 99.999...96.
+
+Actions can come from a file, and the CLI wires it up:
+
+```console
+$ mdnorm bars trades.csv --interval 1d --actions actions.csv -o adjusted.csv
+```
+
+```text
+ts,kind,value,ref_price
+2026-06-06T00:00:00Z,split,4,
+2026-05-09T00:00:00Z,dividend,0.25,190.50
+2026-03-14T00:00:00Z,roll,5312.50,5290.25
+```
+
 ### Data quality
 
 ```python
@@ -217,6 +267,7 @@ The common conversions ship as a zero-dependency CLI:
 $ mdnorm bars trades.csv --venue binance --interval 1m -o bars.csv
 $ mdnorm quality trades.csv --max-gap 5m
 $ mdnorm convert trades.csv -o trades.jsonl
+$ mdnorm bars trades.csv --interval 1d --actions actions.csv -o adjusted.csv
 ```
 
 Also available as `python -m mdnorm`.
@@ -258,7 +309,8 @@ raw feed ──► normalizer ─────────────► MarketE
   FIX)        from_fix)                                  execution)
                     │
                     ├── symbols.canonical_symbol()   BTCUSDT → BTC-USDT
-                    └── timeutil.*_to_ns()           any time → ns UTC
+                    ├── timeutil.*_to_ns()           any time → ns UTC
+                    └── adjust.adjust_events()       splits/divs/rolls
 ```
 
 ## Tests

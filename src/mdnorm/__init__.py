@@ -5,6 +5,18 @@ into a single, exchange-agnostic :class:`MarketEvent` schema.
 """
 from __future__ import annotations
 
+from .adjust import (
+    Action,
+    ActionKind,
+    AdjustMethod,
+    adjust_bars,
+    adjust_events,
+    adjustment_at,
+    dividend,
+    read_actions_csv,
+    roll,
+    split,
+)
 from .bars import (
     Bar,
     count_bars,
@@ -42,7 +54,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.3.1"
+__version__ = "1.4.0"
 
 __all__ = [
     "MarketEvent",
@@ -60,6 +72,16 @@ __all__ = [
     "count_bars",
     "volume_bars",
     "dollar_bars",
+    "Action",
+    "ActionKind",
+    "AdjustMethod",
+    "split",
+    "dividend",
+    "roll",
+    "adjust_events",
+    "adjust_bars",
+    "adjustment_at",
+    "read_actions_csv",
     "Session",
     "in_session",
     "filter_session",
