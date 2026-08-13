@@ -22,6 +22,7 @@ from .bars import (
     count_bars,
     dollar_bars,
     fill_gaps,
+    imbalance_bars,
     resample_bars,
     time_bars,
     volume_bars,
@@ -34,6 +35,17 @@ from .normalizers import (
     from_fix,
     from_ws_json,
     from_ws_quote,
+)
+from .micro import (
+    SideRule,
+    effective_spreads,
+    infer_sides,
+    mean_effective_spread,
+    quote_rule,
+    roll_spread,
+    signed_volume,
+    tick_rule,
+    trade_imbalance,
 )
 from .pipeline import Pipeline
 from .quality import QualityIssue, clean, find_issues
@@ -54,7 +66,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 
 __all__ = [
     "MarketEvent",
@@ -72,6 +84,16 @@ __all__ = [
     "count_bars",
     "volume_bars",
     "dollar_bars",
+    "imbalance_bars",
+    "SideRule",
+    "infer_sides",
+    "tick_rule",
+    "quote_rule",
+    "signed_volume",
+    "trade_imbalance",
+    "effective_spreads",
+    "mean_effective_spread",
+    "roll_spread",
     "Action",
     "ActionKind",
     "AdjustMethod",

@@ -3,6 +3,37 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.5.0] - 2026-08-13
+
+### Added
+- Trade classification and microstructure metrics (`mdnorm.micro`). Most
+  tapes omit the aggressor side; `infer_sides` fills it in using the tick
+  rule, the quote rule, or Lee-Ready (quote rule with a tick-rule fallback
+  at the mid, the default). A venue-reported side is never overwritten
+  unless `overwrite=True`, and trades that cannot be resolved keep
+  `side=None` instead of being guessed at. `lag_ns` matches trades against
+  an earlier quote for feeds with reporting delay.
+- Metrics that need a side: `signed_volume` and `trade_imbalance`
+  (normalised to [-1, 1], `None` when nothing is classified).
+- Metrics that do not: `effective_spreads` / `mean_effective_spread`
+  against the prevailing quote, and `roll_spread`, Roll's (1984) implied
+  spread from the serial covariance of price changes. Both return `None`
+  rather than a misleading zero when undefined.
+- `imbalance_bars`: sampling driven by directional order flow rather than
+  time or volume, measured `by="volume"` or `by="tick"`. Unclassified
+  trades count toward OHLCV but contribute no imbalance, so an unclassified
+  stream yields one bar rather than a wrong answer.
+- Matching `Pipeline` steps (`.infer_sides(...)`, `.imbalance_bars(...)`)
+  and CLI flags `--infer-sides`, `--side-rule` and `--every-imbalance`
+  with `--imbalance-by`.
+
+### Notes
+- Quote lookup is indexed by binary search, so classifying trades against a
+  quote stream is O(n log n) rather than a scan per trade.
+- Roll's estimator assumes serially uncorrelated trade signs and is biased
+  upward when they are not; the limitation has its own test rather than
+  being smoothed over.
+
 ## [1.4.0] - 2026-08-11
 
 ### Added

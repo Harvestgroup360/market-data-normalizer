@@ -7,6 +7,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm convert trades.csv --venue binance -o trades.jsonl
     mdnorm bars trades.csv --interval 5m --session 09:30-16:00 --tz America/New_York -o rth.csv
     mdnorm bars trades.csv --interval 1d --actions splits.csv -o adjusted.csv
+    mdnorm bars quotes_and_trades.jsonl --infer-sides --every-imbalance 500 -o imb.csv
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -22,9 +23,11 @@ from typing import List, Optional
 
 from . import __version__
 from .adjust import AdjustMethod, adjust_events, read_actions_csv
-from .bars import count_bars, dollar_bars, fill_gaps, time_bars, volume_bars
+from .bars import (count_bars, dollar_bars, fill_gaps, imbalance_bars,
+                   time_bars, volume_bars)
 from .csvio import read_csv_trades, write_records_csv
 from .jsonl import read_jsonl_events, write_jsonl
+from .micro import SideRule, infer_sides
 from .quality import clean, find_issues
 from .schema import MarketEvent
 from .sessions import filter_session, parse_session
@@ -72,6 +75,12 @@ def _read_events(args: argparse.Namespace) -> List[MarketEvent]:
             print(f"session: dropped {dropped} event(s) outside "
                   f"{args.session} {args.tz}", file=sys.stderr)
         events = kept
+    if getattr(args, "infer_sides", False):
+        before = sum(1 for e in events if e.side is not None)
+        events = infer_sides(events, rule=SideRule(args.side_rule))
+        after = sum(1 for e in events if e.side is not None)
+        print(f"infer-sides: classified {after - before} trade(s) "
+              f"using the {args.side_rule} rule", file=sys.stderr)
     actions = _load_actions(args)
     if actions:
         events = adjust_events(
@@ -125,6 +134,14 @@ def _add_input_args(p: argparse.ArgumentParser) -> None:
         "--adjust", choices=["ratio", "difference"], default="ratio",
         help="back-adjustment convention for --actions (default: ratio)",
     )
+    p.add_argument(
+        "--infer-sides", action="store_true",
+        help="classify the aggressor side of trades that do not report one",
+    )
+    p.add_argument(
+        "--side-rule", choices=["tick", "quote", "lee_ready"], default="lee_ready",
+        help="classification rule for --infer-sides (default: lee_ready)",
+    )
 
 
 def _cmd_bars(args: argparse.Namespace) -> int:
@@ -144,8 +161,11 @@ def _cmd_bars(args: argparse.Namespace) -> int:
         bars = count_bars(events, args.every_trades)
     elif args.every_volume is not None:
         bars = volume_bars(events, Decimal(args.every_volume))
-    else:
+    elif args.every_notional is not None:
         bars = dollar_bars(events, Decimal(args.every_notional))
+    else:
+        bars = imbalance_bars(events, Decimal(args.every_imbalance),
+                              by=args.imbalance_by)
     n = _write(bars, args.output, as_float=args.as_float)
     print(f"wrote {n} bar(s) -> {args.output}")
     return 0
@@ -205,6 +225,13 @@ def build_parser() -> argparse.ArgumentParser:
                      help="volume bars: close a bar at >= V base units")
     how.add_argument("--every-notional", metavar="X",
                      help="dollar bars: close a bar at >= X traded value")
+    how.add_argument("--every-imbalance", metavar="I",
+                     help="imbalance bars: close a bar when signed order flow "
+                          "reaches +/- I (needs a side; see --infer-sides)")
+    p_bars.add_argument("--imbalance-by", choices=["volume", "tick"],
+                        default="volume",
+                        help="measure imbalance in traded size or trade count "
+                             "(default: volume)")
     p_bars.add_argument("--dedupe", action="store_true",
                         help="drop exact duplicate events first")
     p_bars.add_argument("--clean", action="store_true",

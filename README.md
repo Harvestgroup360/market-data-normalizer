@@ -169,6 +169,7 @@ Actions can come from a file, and the CLI wires it up:
 
 ```console
 $ mdnorm bars trades.csv --interval 1d --actions actions.csv -o adjusted.csv
+$ mdnorm bars tape.jsonl --infer-sides --every-imbalance 500 -o imbalance.csv
 ```
 
 ```text
@@ -176,6 +177,54 @@ ts,kind,value,ref_price
 2026-06-06T00:00:00Z,split,4,
 2026-05-09T00:00:00Z,dividend,0.25,190.50
 2026-03-14T00:00:00Z,roll,5312.50,5290.25
+```
+
+### Who crossed the spread
+
+Most trade tapes give you a price and a size but not the aggressor. That one
+missing field is what separates a price series from an order-flow series, and
+signed volume, order imbalance and imbalance bars are all defined in terms of
+it. `mdnorm.micro` infers it, using the three rules the literature settled on:
+
+```python
+from mdnorm import SideRule, infer_sides, trade_imbalance, mean_effective_spread
+
+classified = infer_sides(events)                       # Lee-Ready by default
+print(trade_imbalance(classified))                     # -1 selling .. +1 buying
+print(mean_effective_spread(classified))               # 2 * |price - mid|
+```
+
+`SideRule.TICK` compares each trade with the previous different price and
+needs trades only. `SideRule.QUOTE` compares the trade with the prevailing
+mid. `SideRule.LEE_READY` — the default — uses the quote rule and falls back
+to the tick rule at the mid. A side reported by the venue always wins;
+inference only fills gaps, and trades it cannot resolve stay `None` rather
+than being guessed at. Published accuracy of these rules is roughly 75-85% on
+liquid names, so treat an inferred side as an estimate.
+
+`roll_spread` estimates the effective spread from trade prices alone, via the
+serial covariance that bid-ask bounce induces. It needs no quotes, which makes
+it a useful cross-check on the rest — and it returns `None` rather than zero
+when the covariance comes out non-negative and the estimator is undefined.
+
+### Imbalance bars
+
+Once trades carry a side, the sampling clock can follow order flow instead of
+time or volume:
+
+```python
+from mdnorm import Pipeline
+
+bars = Pipeline().infer_sides().imbalance_bars(Decimal("500")).run(events)
+```
+
+A bar runs until buyers have outbought sellers, or the reverse, by the
+threshold. Balanced two-sided periods produce one long bar; a sustained
+one-sided push produces several short ones. `by="tick"` measures the imbalance
+in trade count rather than size. From the command line:
+
+```console
+$ mdnorm bars tape.jsonl --infer-sides --every-imbalance 500 -o imbalance.csv
 ```
 
 ### Data quality
@@ -310,7 +359,8 @@ raw feed ──► normalizer ─────────────► MarketE
                     │
                     ├── symbols.canonical_symbol()   BTCUSDT → BTC-USDT
                     ├── timeutil.*_to_ns()           any time → ns UTC
-                    └── adjust.adjust_events()       splits/divs/rolls
+                    ├── adjust.adjust_events()       splits/divs/rolls
+                    └── micro.infer_sides()          who crossed the spread
 ```
 
 ## Tests

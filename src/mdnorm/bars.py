@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Iterable, List, Optional, Sequence
 
-from .schema import EventType, MarketEvent
+from .schema import EventType, MarketEvent, Side
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +83,36 @@ def time_bars(
             volume=b["volume"], trades=b["trades"], vwap=vwap,
         ))
     return out
+
+
+def imbalance_bars(
+    events: Iterable[MarketEvent],
+    threshold: Decimal,
+    *,
+    by: str = "volume",
+) -> List[Bar]:
+    """Close a bar once order flow has leaned far enough one way.
+
+    Where volume bars sample on activity, imbalance bars sample on
+    *directional* activity: the bar runs until buyers have outbought sellers
+    (or the reverse) by ``threshold``, then resets. Quiet two-sided periods
+    produce one long bar; a sustained one-sided push produces several short
+    ones, which is the point — the sampling clock follows information rather
+    than the wall clock.
+
+    ``by="volume"`` measures the imbalance in traded size, ``by="tick"`` in
+    trade count. Both need the aggressor side; see :mod:`mdnorm.micro` to
+    infer it when the feed does not report it. Trades with no side count
+    toward the bar's OHLCV but contribute nothing to the imbalance, so an
+    entirely unclassified stream yields a single bar rather than a wrong
+    answer. The trailing partial bar is included.
+    """
+    if threshold <= 0:
+        raise ValueError("threshold must be positive")
+    if by not in ("volume", "tick"):
+        raise ValueError("by must be 'volume' or 'tick'")
+    key = "signed_volume" if by == "volume" else "signed_ticks"
+    return _event_bars(events, lambda acc: abs(acc[key]) >= threshold)
 
 
 def resample_bars(bars: Sequence[Bar], interval_ns: int) -> List[Bar]:
@@ -179,6 +209,19 @@ def _close_bar(acc: dict) -> Bar:
     )
 
 
+def _sign(e: MarketEvent) -> int:
+    """+1 for a buyer-initiated trade, -1 for seller-initiated, 0 if unknown."""
+    if e.side is Side.BUY:
+        return 1
+    if e.side is Side.SELL:
+        return -1
+    return 0
+
+
+def _signed(e: MarketEvent, size: Decimal) -> Decimal:
+    return size * _sign(e)
+
+
 def _event_bars(events, threshold_reached) -> List[Bar]:
     """Shared engine for count/volume/dollar bars.
 
@@ -196,7 +239,9 @@ def _event_bars(events, threshold_reached) -> List[Bar]:
             acc = {"first_ts": e.ts_ns, "last_ts": e.ts_ns,
                    "open": e.price, "high": e.price, "low": e.price,
                    "close": e.price, "volume": size,
-                   "notional": e.price * size, "trades": 1}
+                   "notional": e.price * size, "trades": 1,
+                   "signed_volume": _signed(e, size),
+                   "signed_ticks": _sign(e)}
         else:
             if e.price > acc["high"]:
                 acc["high"] = e.price
@@ -207,6 +252,8 @@ def _event_bars(events, threshold_reached) -> List[Bar]:
             acc["volume"] += size
             acc["notional"] += e.price * size
             acc["trades"] += 1
+            acc["signed_volume"] += _signed(e, size)
+            acc["signed_ticks"] += _sign(e)
         if threshold_reached(acc):
             out.append(_close_bar(acc))
             acc = None

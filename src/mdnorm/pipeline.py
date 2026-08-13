@@ -16,9 +16,12 @@ from .adjust import adjust_events as _adjust_events
 from .bars import count_bars as _count_bars
 from .bars import dollar_bars as _dollar_bars
 from .bars import fill_gaps as _fill_gaps
+from .bars import imbalance_bars as _imbalance_bars
 from .bars import resample_bars as _resample_bars
 from .bars import time_bars as _time_bars
 from .bars import volume_bars as _volume_bars
+from .micro import SideRule
+from .micro import infer_sides as _infer_sides
 from .quality import QualityIssue
 from .quality import clean as _clean
 from .schema import MarketEvent
@@ -104,6 +107,25 @@ class Pipeline:
         self._steps.append(("adjust", step))
         return self
 
+    def infer_sides(
+        self,
+        *,
+        rule: SideRule = SideRule.LEE_READY,
+        lag_ns: int = 0,
+        overwrite: bool = False,
+    ) -> "Pipeline":
+        """Classify the aggressor side of trades (:mod:`mdnorm.micro`).
+
+        Runs before aggregation, so imbalance bars and signed-volume features
+        downstream have a side to work with.
+        """
+        self._steps.append(
+            ("infer_sides",
+             lambda data: _infer_sides(
+                 data, rule=rule, lag_ns=lag_ns, overwrite=overwrite))
+        )
+        return self
+
     # -- bar-level steps ---------------------------------------------------
 
     def time_bars(self, interval_ns: int) -> "Pipeline":
@@ -131,6 +153,13 @@ class Pipeline:
         """Aggregate trades into dollar bars of >= ``min_notional``."""
         self._steps.append(
             ("dollar_bars", lambda data: _dollar_bars(data, min_notional))
+        )
+        return self
+
+    def imbalance_bars(self, threshold: Decimal, *, by: str = "volume") -> "Pipeline":
+        """Aggregate trades into order-flow imbalance bars."""
+        self._steps.append(
+            ("imbalance_bars", lambda data: _imbalance_bars(data, threshold, by=by))
         )
         return self
 
