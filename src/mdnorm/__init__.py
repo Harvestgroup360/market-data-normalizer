@@ -17,6 +17,7 @@ from .adjust import (
     roll,
     split,
 )
+from .book import BookDelta, OrderBook, SequenceGapError, replay_book
 from .bars import (
     Bar,
     count_bars,
@@ -66,7 +67,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.5.0"
+__version__ = "1.6.0"
 
 __all__ = [
     "MarketEvent",
@@ -85,6 +86,10 @@ __all__ = [
     "volume_bars",
     "dollar_bars",
     "imbalance_bars",
+    "BookDelta",
+    "OrderBook",
+    "SequenceGapError",
+    "replay_book",
     "SideRule",
     "infer_sides",
     "tick_rule",

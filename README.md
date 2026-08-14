@@ -170,6 +170,7 @@ Actions can come from a file, and the CLI wires it up:
 ```console
 $ mdnorm bars trades.csv --interval 1d --actions actions.csv -o adjusted.csv
 $ mdnorm bars tape.jsonl --infer-sides --every-imbalance 500 -o imbalance.csv
+$ mdnorm book deltas.csv --symbol BTC-USD -o quotes.jsonl
 ```
 
 ```text
@@ -225,6 +226,45 @@ in trade count rather than size. From the command line:
 
 ```console
 $ mdnorm bars tape.jsonl --infer-sides --every-imbalance 500 -o imbalance.csv
+```
+
+### Rebuilding the order book
+
+Exchanges do not send you a book. They send a snapshot and then a stream of
+deltas, and the book only exists if you apply every one of them, in order:
+
+```python
+from mdnorm import BookDelta, OrderBook, Side, replay_book
+
+book = OrderBook("BTC-USD", "binance")
+book.apply_snapshot(ts, bids=[(D("100"), D("2"))], asks=[(D("101"), D("3"))], seq=10)
+
+quotes = list(replay_book(book, deltas))     # one quote per change in the top
+print(book.best_bid, book.spread, book.imbalance(levels=5))
+```
+
+Two failure modes make a reconstructed book silently untrue, and this
+implementation refuses to hide either.
+
+A **sequence gap** means a message was missed, and no later update repairs the
+damage — the book is simply wrong from then on, in a way that looks completely
+normal. `OrderBook` raises `SequenceGapError` the moment a number is skipped,
+naming how many updates went missing, because the correct response is to
+resynchronise from a snapshot rather than carry on. Duplicated or replayed
+messages are rejected the same way. Feeds without sequence numbers work fine;
+pass `strict_sequence=False` to opt out entirely.
+
+A **crossed book** — best bid at or above best ask — is not a market state but
+a symptom: a dropped delete, a stale snapshot, two venues merged by mistake.
+It is exposed as `is_crossed`, and the spread goes negative rather than being
+quietly clamped to zero.
+
+`to_quote()` turns the top of the book into an ordinary `MarketEvent`, so a
+reconstructed book feeds straight into session filtering, trade classification
+and effective spreads with nothing in between. From the command line:
+
+```console
+$ mdnorm book deltas.csv --symbol BTC-USD --venue binance -o quotes.jsonl
 ```
 
 ### Data quality
@@ -360,7 +400,8 @@ raw feed ──► normalizer ─────────────► MarketE
                     ├── symbols.canonical_symbol()   BTCUSDT → BTC-USDT
                     ├── timeutil.*_to_ns()           any time → ns UTC
                     ├── adjust.adjust_events()       splits/divs/rolls
-                    └── micro.infer_sides()          who crossed the spread
+                    ├── micro.infer_sides()          who crossed the spread
+                    └── book.OrderBook()             deltas → live book → quotes
 ```
 
 ## Tests

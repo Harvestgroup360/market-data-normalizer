@@ -8,6 +8,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm bars trades.csv --interval 5m --session 09:30-16:00 --tz America/New_York -o rth.csv
     mdnorm bars trades.csv --interval 1d --actions splits.csv -o adjusted.csv
     mdnorm bars quotes_and_trades.jsonl --infer-sides --every-imbalance 500 -o imb.csv
+    mdnorm book deltas.csv --symbol BTC-USD --venue binance -o quotes.jsonl
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -25,11 +26,14 @@ from . import __version__
 from .adjust import AdjustMethod, adjust_events, read_actions_csv
 from .bars import (count_bars, dollar_bars, fill_gaps, imbalance_bars,
                    time_bars, volume_bars)
+from .book import BookDelta, OrderBook, replay_book
 from .csvio import read_csv_trades, write_records_csv
 from .jsonl import read_jsonl_events, write_jsonl
 from .micro import SideRule, infer_sides
 from .quality import clean, find_issues
-from .schema import MarketEvent
+from .fileio import open_text
+from .schema import MarketEvent, Side
+from .timeutil import epoch_to_ns, iso_to_ns
 from .sessions import filter_session, parse_session
 from .streams import dedupe
 
@@ -202,6 +206,51 @@ def _cmd_convert(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_book(args: argparse.Namespace) -> int:
+    import csv as _csv
+
+    book = OrderBook(
+        args.symbol, args.venue,
+        max_depth=args.max_depth,
+        strict_sequence=not args.ignore_sequence,
+    )
+
+    def deltas():
+        with open_text(args.input) as f:
+            for lineno, row in enumerate(_csv.DictReader(f), start=2):
+                if not any((v or "").strip() for v in row.values()):
+                    continue
+                try:
+                    raw_ts = (row.get("ts") or row.get("timestamp") or "").strip()
+                    ts_ns = (epoch_to_ns(float(raw_ts), args.ts_unit)
+                             if args.ts_unit else iso_to_ns(raw_ts))
+                    name = (row.get("side") or "").strip().lower()
+                    if name in ("buy", "b", "bid"):
+                        side = Side.BUY
+                    elif name in ("sell", "s", "ask"):
+                        side = Side.SELL
+                    else:
+                        raise ValueError(f"unknown side {name!r}")
+                    seq = (row.get("seq") or "").strip()
+                    yield BookDelta(
+                        ts_ns=ts_ns, side=side,
+                        price=Decimal(str(row["price"]).strip()),
+                        size=Decimal(str(row["size"]).strip()),
+                        seq=int(seq) if seq else None,
+                    )
+                except (ValueError, KeyError, TypeError) as exc:
+                    raise ValueError(f"{args.input}:{lineno}: {exc}") from exc
+
+    quotes = list(replay_book(book, deltas(),
+                              top_of_book_only=not args.every_update))
+    n = _write(quotes, args.output, as_float=args.as_float)
+    print(f"wrote {n} quote(s) -> {args.output}")
+    if book.is_crossed:
+        print("warning: the final book is crossed (best bid >= best ask)",
+              file=sys.stderr)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mdnorm",
@@ -263,6 +312,25 @@ def build_parser() -> argparse.ArgumentParser:
     p_c.add_argument("--as-float", action="store_true",
                      help="write numeric values instead of strings")
     p_c.set_defaults(func=_cmd_convert)
+
+    p_b = sub.add_parser("book",
+                         help="rebuild an order book from deltas and emit quotes")
+    p_b.add_argument("input", help="CSV of book deltas (ts,side,price,size[,seq])")
+    p_b.add_argument("-o", "--output", required=True,
+                     help="output file (.csv, .jsonl, .ndjson; .gz accepted)")
+    p_b.add_argument("--symbol", required=True, help="symbol the book belongs to")
+    p_b.add_argument("--venue", default="csv", help="venue label (default: csv)")
+    p_b.add_argument("--ts-unit", choices=["s", "ms", "us", "ns"], default=None,
+                     help="parse timestamps as epoch in this unit (default: ISO-8601)")
+    p_b.add_argument("--max-depth", type=int, default=None, metavar="N",
+                     help="keep only the best N levels per side")
+    p_b.add_argument("--ignore-sequence", action="store_true",
+                     help="do not stop on a sequence gap (the book may be wrong)")
+    p_b.add_argument("--every-update", action="store_true",
+                     help="emit a quote per delta, not only when the top changes")
+    p_b.add_argument("--as-float", action="store_true",
+                     help="write numeric values instead of strings")
+    p_b.set_defaults(func=_cmd_book)
 
     return parser
 

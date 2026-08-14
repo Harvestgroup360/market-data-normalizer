@@ -3,6 +3,39 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.6.0] - 2026-08-14
+
+### Added
+- Order book reconstruction (`mdnorm.book`). `OrderBook` maintains a
+  single-symbol limit order book from a snapshot plus incremental
+  `BookDelta` updates, exposing `best_bid`, `best_ask`, `mid`, `spread`,
+  `depth(side, levels)` and `imbalance(levels)` — resting-size imbalance,
+  distinct from the executed-trade imbalance in `mdnorm.micro`.
+- `SequenceGapError`: a skipped sequence number raises immediately, naming
+  how many updates went missing, instead of leaving a book that is wrong in
+  a way nothing downstream can detect. Duplicate and replayed messages are
+  rejected the same way, the book is left untouched when a delta is
+  rejected, and a fresh snapshot resynchronises. `strict_sequence=False`
+  for feeds without sequence numbers.
+- `is_crossed` reports a bid at or above the ask rather than normalising it
+  away; the spread goes negative and stays visible.
+- `to_quote()` emits the top of book as a `MarketEvent`, so a reconstructed
+  book feeds session filtering, trade classification and effective spreads
+  unchanged. `replay_book()` streams those quotes, by default only when the
+  top actually changes.
+- `max_depth` trims to a fixed number of levels per side for feeds that
+  publish bounded depth.
+- New CLI subcommand: `mdnorm book deltas.csv --symbol BTC-USD -o quotes.jsonl`,
+  with `--max-depth`, `--every-update` and `--ignore-sequence`.
+
+### Notes
+- Price levels are kept in a sorted list with binary-search insertion, so
+  applying a delta is O(log n) in the number of levels rather than a re-sort.
+  50,000 deltas replay in about 0.1 s.
+- `replay_book` seeds its comparison from the book's current top, so
+  replaying a deep delta onto a populated book emits nothing rather than a
+  spurious first quote.
+
 ## [1.5.0] - 2026-08-13
 
 ### Added
