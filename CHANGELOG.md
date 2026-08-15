@@ -3,6 +3,38 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.7.0] - 2026-08-16
+
+### Added
+- Multi-venue quote consolidation (`mdnorm.consolidate`). `Consolidator`
+  keeps the best bid and offer across venues for one symbol; `consolidate()`
+  runs a whole stream and emits one event per change in the consolidated top.
+  Output carries the `CONSOLIDATED` venue label, since the two sides can come
+  from different places.
+- `max_age_ns` retires a venue that has stopped quoting, with `stale_venues()`
+  and `fresh_venues()` to inspect it. Without a cutoff a disconnected feed
+  keeps contributing its last quote forever, and because a stale price is
+  often the best price, the dead venue ends up setting the top of book.
+- `is_crossed` and `crossed_updates` report a bid above an offer across
+  venues rather than hiding it — nearly always clock skew between feeds, and
+  worth investigating rather than trading.
+- Deterministic tie-breaking: equal best prices resolve by size, then by
+  venue name, so the same input always produces the same output.
+- `leadership` counts how many updates each venue spent at the top of each
+  side, and `VenueTop` reports which venue is showing the current best.
+- New CLI subcommand: `mdnorm nbbo quotes.jsonl --max-age 2s -o top.jsonl`,
+  which also prints venue leadership, a crossed-book count and any venues
+  left stale at the end.
+
+### Notes
+- Emission is decided on the values a consolidated event actually carries,
+  not on the internal `VenueTop` objects: a venue re-sending an identical
+  quote changes its source timestamp without changing anything a consumer
+  would see, and must not produce an event.
+- A guard against two-sided-empty quotes was dropped from the consolidator
+  after a test showed `MarketEvent` already rejects them at construction.
+  The test now pins that upstream behaviour instead.
+
 ## [1.6.0] - 2026-08-14
 
 ### Added

@@ -171,6 +171,7 @@ Actions can come from a file, and the CLI wires it up:
 $ mdnorm bars trades.csv --interval 1d --actions actions.csv -o adjusted.csv
 $ mdnorm bars tape.jsonl --infer-sides --every-imbalance 500 -o imbalance.csv
 $ mdnorm book deltas.csv --symbol BTC-USD -o quotes.jsonl
+$ mdnorm nbbo quotes.jsonl --max-age 2s -o top.jsonl
 ```
 
 ```text
@@ -265,6 +266,43 @@ and effective spreads with nothing in between. From the command line:
 
 ```console
 $ mdnorm book deltas.csv --symbol BTC-USD --venue binance -o quotes.jsonl
+```
+
+### One instrument, several venues
+
+When something trades in more than one place, "the price" is a question. The
+consolidated top of book is the answer, and it is where three problems live
+that a maximum over venues will not warn you about:
+
+```python
+from mdnorm import consolidate
+
+top = consolidate(quotes, max_age_ns=2_000_000_000)   # 2s staleness cutoff
+```
+
+**A venue that goes quiet keeps voting.** When a feed disconnects, its last
+quote stays in the consolidation forever — and a stale price is very often the
+*best* price, so the dead venue ends up setting the top of book. This is the
+failure that produces a consolidated feed which looks excellent and is
+fiction. `max_age_ns` retires a venue that has not spoken recently;
+`stale_venues()` names them.
+
+**A consolidated book can appear crossed.** A bid on one venue above the offer
+on another looks like free money and is almost always clock skew between two
+feeds timestamped by different machines. `is_crossed` reports it and
+`crossed_updates` counts it, because the useful response is to check the
+clocks rather than to trade the spread.
+
+**Ties need a rule.** Equal best prices are broken by size, then by venue
+name, so the same input always produces the same output.
+
+Which venue actually sets the price is a measurement in its own right, and
+`leadership` counts it. The pieces compose: an order book becomes a quote,
+quotes from several venues consolidate into one, and the result feeds trade
+classification and effective spreads unchanged.
+
+```console
+$ mdnorm nbbo quotes.jsonl --symbol BTC-USD --max-age 2s -o top.jsonl
 ```
 
 ### Data quality
@@ -401,7 +439,8 @@ raw feed ──► normalizer ─────────────► MarketE
                     ├── timeutil.*_to_ns()           any time → ns UTC
                     ├── adjust.adjust_events()       splits/divs/rolls
                     ├── micro.infer_sides()          who crossed the spread
-                    └── book.OrderBook()             deltas → live book → quotes
+                    ├── book.OrderBook()             deltas → live book → quotes
+                    └── consolidate()                many venues → one best bid/offer
 ```
 
 ## Tests

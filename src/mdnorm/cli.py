@@ -9,6 +9,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm bars trades.csv --interval 1d --actions splits.csv -o adjusted.csv
     mdnorm bars quotes_and_trades.jsonl --infer-sides --every-imbalance 500 -o imb.csv
     mdnorm book deltas.csv --symbol BTC-USD --venue binance -o quotes.jsonl
+    mdnorm nbbo quotes.jsonl --symbol BTC-USD --max-age 2s -o top.jsonl
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -27,6 +28,7 @@ from .adjust import AdjustMethod, adjust_events, read_actions_csv
 from .bars import (count_bars, dollar_bars, fill_gaps, imbalance_bars,
                    time_bars, volume_bars)
 from .book import BookDelta, OrderBook, replay_book
+from .consolidate import Consolidator
 from .csvio import read_csv_trades, write_records_csv
 from .jsonl import read_jsonl_events, write_jsonl
 from .micro import SideRule, infer_sides
@@ -251,6 +253,38 @@ def _cmd_book(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_nbbo(args: argparse.Namespace) -> int:
+    events = read_jsonl_events(args.input) if _is_jsonl(args.input) else []
+    if not _is_jsonl(args.input):
+        print("error: nbbo needs an NDJSON quote file (.jsonl/.ndjson)",
+              file=sys.stderr)
+        return 1
+    quotes = sorted((e for e in events if e.event_type.value == "quote"),
+                    key=lambda e: e.ts_ns)
+    if not quotes:
+        print("error: no quote events in the input", file=sys.stderr)
+        return 1
+
+    symbol = args.symbol or quotes[0].symbol
+    book = Consolidator(symbol, max_age_ns=args.max_age)
+    out = [top for q in quotes if (top := book.update(q)) is not None]
+    n = _write(out, args.output, as_float=args.as_float)
+    print(f"wrote {n} consolidated quote(s) -> {args.output}")
+
+    if book.leadership:
+        print("venue leadership (updates at the top):", file=sys.stderr)
+        for venue in sorted(book.leadership):
+            c = book.leadership[venue]
+            print(f"  {venue}: bid {c['bid']}, ask {c['ask']}", file=sys.stderr)
+    if book.crossed_updates:
+        print(f"warning: {book.crossed_updates} update(s) produced a crossed "
+              f"consolidated book — check the venue clocks", file=sys.stderr)
+    stale = book.stale_venues()
+    if stale:
+        print(f"warning: stale at the end: {', '.join(stale)}", file=sys.stderr)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mdnorm",
@@ -331,6 +365,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_b.add_argument("--as-float", action="store_true",
                      help="write numeric values instead of strings")
     p_b.set_defaults(func=_cmd_book)
+
+    p_n = sub.add_parser("nbbo",
+                         help="consolidate multi-venue quotes into a best bid and offer")
+    p_n.add_argument("input", help="NDJSON quote events from several venues")
+    p_n.add_argument("-o", "--output", required=True,
+                     help="output file (.csv, .jsonl, .ndjson; .gz accepted)")
+    p_n.add_argument("--symbol", default=None,
+                     help="symbol to consolidate (default: the first one seen)")
+    p_n.add_argument("--max-age", type=parse_interval, default=None,
+                     metavar="DURATION",
+                     help="drop a venue that has not quoted for this long, "
+                          "e.g. 2s — strongly recommended on live data")
+    p_n.add_argument("--as-float", action="store_true",
+                     help="write numeric values instead of strings")
+    p_n.set_defaults(func=_cmd_nbbo)
 
     return parser
 

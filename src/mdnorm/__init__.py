@@ -18,6 +18,7 @@ from .adjust import (
     split,
 )
 from .book import BookDelta, OrderBook, SequenceGapError, replay_book
+from .consolidate import CONSOLIDATED, Consolidator, VenueTop, consolidate
 from .bars import (
     Bar,
     count_bars,
@@ -67,7 +68,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.6.0"
+__version__ = "1.7.0"
 
 __all__ = [
     "MarketEvent",
@@ -90,6 +91,10 @@ __all__ = [
     "OrderBook",
     "SequenceGapError",
     "replay_book",
+    "Consolidator",
+    "consolidate",
+    "VenueTop",
+    "CONSOLIDATED",
     "SideRule",
     "infer_sides",
     "tick_rule",
