@@ -172,6 +172,7 @@ $ mdnorm bars trades.csv --interval 1d --actions actions.csv -o adjusted.csv
 $ mdnorm bars tape.jsonl --infer-sides --every-imbalance 500 -o imbalance.csv
 $ mdnorm book deltas.csv --symbol BTC-USD -o quotes.jsonl
 $ mdnorm nbbo quotes.jsonl --max-age 2s -o top.jsonl
+$ mdnorm tca fills.csv --market tape.jsonl --decision-price 100
 ```
 
 ```text
@@ -303,6 +304,49 @@ classification and effective spreads unchanged.
 
 ```console
 $ mdnorm nbbo quotes.jsonl --symbol BTC-USD --max-age 2s -o top.jsonl
+```
+
+### Did I execute well?
+
+Once the tape is clean the next question is about you rather than the market,
+and every standard benchmark has a way of quietly flattering the person
+running it:
+
+```python
+from mdnorm import Fill, Side, evaluate
+
+report = evaluate(my_fills, market_trades, decision_price=D("100"))
+print(report.slippage_vs_vwap_bps, report.participation_rate)
+```
+
+**Your own trades are in the benchmark.** A VWAP over the public tape includes
+the prints you just made, so you end up partly benchmarking yourself against
+yourself — and the bigger your share of volume, the more the benchmark bends
+toward your own average price. `evaluate` removes your fills from the tape
+before computing anything; `exclude_fills` does it on its own if you want the
+benchmark separately. In the library's own test suite, leaving them in turns a
+100 VWAP into 109 and a losing execution into a winning one.
+
+**Participation decides whether the number means anything.** Beating VWAP by
+two basis points on 0.1% of volume is a result; the same number on 30% of
+volume mostly measures your own impact. The summary always reports the two
+together, and the CLI says so out loud above 10%.
+
+**Sign conventions are stated, not assumed.** Positive basis points always
+mean better than the benchmark — paying below it on a buy, selling above it on
+a sell. Mixed-side fills are refused rather than netted, because one number
+covering both directions has no meaning.
+
+By default the window runs from your first fill to your last. That is right
+for a worked order and wrong for a single fill — the only print in the window
+is then your own — so `start_ns` and `end_ns` let you score against an
+interval you chose instead.
+
+TWAP skips intervals that never traded instead of carrying the last price
+forward, for the same reason nothing else here invents data.
+
+```console
+$ mdnorm tca fills.csv --market tape.jsonl --decision-price 100
 ```
 
 ### Data quality
@@ -440,7 +484,8 @@ raw feed ──► normalizer ─────────────► MarketE
                     ├── adjust.adjust_events()       splits/divs/rolls
                     ├── micro.infer_sides()          who crossed the spread
                     ├── book.OrderBook()             deltas → live book → quotes
-                    └── consolidate()                many venues → one best bid/offer
+                    ├── consolidate()                many venues → one best bid/offer
+                    └── evaluate()                   your fills vs the market
 ```
 
 ## Tests

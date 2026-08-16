@@ -3,6 +3,38 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.8.0] - 2026-08-17
+
+### Added
+- Execution benchmarks (`mdnorm.execution`): `vwap`, `twap`,
+  `average_fill_price`, `slippage_bps`, `implementation_shortfall_bps`,
+  `participation_rate`, and `evaluate()` returning an `ExecutionSummary`
+  with all of them together. A `Fill` records one of your own executions.
+- `exclude_fills` removes your own prints from a public tape before the
+  benchmark is computed. Leaving them in means benchmarking yourself partly
+  against yourself, and the larger your share of volume the more the
+  benchmark bends toward your own average price. `evaluate` does it by
+  default; `exclude_own=False` opts out.
+- Participation rate is measured against the *full* tape, including your own
+  volume, and is reported alongside the score so the two cannot be read
+  apart. The CLI warns above 10%, where a VWAP score largely measures impact.
+- Sign convention fixed and documented: positive basis points always mean
+  better than the benchmark. Mixed-side fills raise rather than netting into
+  a number with no meaning.
+- `evaluate` accepts explicit `start_ns` / `end_ns`. The default window —
+  first fill to last — is right for a worked order and degenerate for a
+  single fill, where the only print in the window is your own.
+- New CLI subcommand: `mdnorm tca fills.csv --market tape.jsonl
+  --decision-price 100`.
+
+### Notes
+- TWAP skips intervals that never traded rather than carrying the previous
+  price forward, consistent with the rest of the library refusing to invent
+  data to fill a silence.
+- A test pins the degenerate single-fill case: when the only print in the
+  window is your own, removing it leaves no market, so the summary returns a
+  null VWAP and 100% participation instead of a fabricated score.
+
 ## [1.7.0] - 2026-08-16
 
 ### Added

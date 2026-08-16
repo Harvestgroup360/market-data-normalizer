@@ -19,6 +19,18 @@ from .adjust import (
 )
 from .book import BookDelta, OrderBook, SequenceGapError, replay_book
 from .consolidate import CONSOLIDATED, Consolidator, VenueTop, consolidate
+from .execution import (
+    ExecutionSummary,
+    Fill,
+    average_fill_price,
+    evaluate,
+    exclude_fills,
+    implementation_shortfall_bps,
+    participation_rate,
+    slippage_bps,
+    twap,
+    vwap,
+)
 from .bars import (
     Bar,
     count_bars,
@@ -68,7 +80,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.7.0"
+__version__ = "1.8.0"
 
 __all__ = [
     "MarketEvent",
@@ -95,6 +107,16 @@ __all__ = [
     "consolidate",
     "VenueTop",
     "CONSOLIDATED",
+    "Fill",
+    "ExecutionSummary",
+    "vwap",
+    "twap",
+    "exclude_fills",
+    "participation_rate",
+    "average_fill_price",
+    "slippage_bps",
+    "implementation_shortfall_bps",
+    "evaluate",
     "SideRule",
     "infer_sides",
     "tick_rule",

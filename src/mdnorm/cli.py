@@ -10,6 +10,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm bars quotes_and_trades.jsonl --infer-sides --every-imbalance 500 -o imb.csv
     mdnorm book deltas.csv --symbol BTC-USD --venue binance -o quotes.jsonl
     mdnorm nbbo quotes.jsonl --symbol BTC-USD --max-age 2s -o top.jsonl
+    mdnorm tca fills.csv --market tape.jsonl --decision-price 100
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -29,6 +30,7 @@ from .bars import (count_bars, dollar_bars, fill_gaps, imbalance_bars,
                    time_bars, volume_bars)
 from .book import BookDelta, OrderBook, replay_book
 from .consolidate import Consolidator
+from .execution import Fill, evaluate
 from .csvio import read_csv_trades, write_records_csv
 from .jsonl import read_jsonl_events, write_jsonl
 from .micro import SideRule, infer_sides
@@ -285,6 +287,64 @@ def _cmd_nbbo(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_tca(args: argparse.Namespace) -> int:
+    import csv as _csv
+
+    fills = []
+    with open_text(args.input) as fh:
+        for lineno, row in enumerate(_csv.DictReader(fh), start=2):
+            if not any((v or "").strip() for v in row.values()):
+                continue
+            try:
+                raw_ts = (row.get("ts") or row.get("timestamp") or "").strip()
+                ts_ns = (epoch_to_ns(float(raw_ts), args.ts_unit)
+                         if args.ts_unit else iso_to_ns(raw_ts))
+                name = (row.get("side") or "").strip().lower()
+                side = Side.BUY if name in ("buy", "b", "bid") else Side.SELL
+                fills.append(Fill(ts_ns=ts_ns,
+                                  price=Decimal(str(row["price"]).strip()),
+                                  size=Decimal(str(row["size"]).strip()),
+                                  side=side))
+            except (ValueError, KeyError, TypeError) as exc:
+                raise ValueError(f"{args.input}:{lineno}: {exc}") from exc
+    if not fills:
+        print("error: no fills in the input", file=sys.stderr)
+        return 1
+
+    market = read_jsonl_events(args.market) if _is_jsonl(args.market) else \
+        read_csv_trades(args.market, venue="market", ts_unit=args.ts_unit)
+
+    r = evaluate(
+        fills, market,
+        decision_price=Decimal(args.decision_price) if args.decision_price else None,
+        twap_interval_ns=args.twap,
+        exclude_own=not args.keep_own,
+        tolerance_ns=args.tolerance,
+    )
+    assert r is not None
+
+    def fmt(v, unit=""):
+        return "n/a" if v is None else f"{v:.4f}{unit}".rstrip("0").rstrip(".") + unit * 0
+
+    print(f"side                {r.side.value}")
+    print(f"filled size         {r.filled_size}")
+    print(f"average price       {r.average_price}")
+    print(f"market VWAP         {fmt(r.vwap)}")
+    if r.twap is not None:
+        print(f"market TWAP         {fmt(r.twap)}")
+    print(f"vs VWAP             {fmt(r.slippage_vs_vwap_bps)} bps"
+          f"   (positive = better)")
+    if r.shortfall_bps is not None:
+        print(f"vs decision price   {fmt(r.shortfall_bps)} bps")
+    if r.participation_rate is not None:
+        print(f"participation       {r.participation_rate * 100:.2f}%")
+    print(f"own prints removed  {r.own_prints_removed}")
+    if r.participation_rate is not None and r.participation_rate > Decimal("0.1"):
+        print("note: above 10% participation a VWAP score largely measures "
+              "your own impact", file=sys.stderr)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mdnorm",
@@ -380,6 +440,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_n.add_argument("--as-float", action="store_true",
                      help="write numeric values instead of strings")
     p_n.set_defaults(func=_cmd_nbbo)
+
+    p_t = sub.add_parser("tca",
+                         help="score your fills against the market they traded in")
+    p_t.add_argument("input", help="CSV of your fills (ts,side,price,size)")
+    p_t.add_argument("--market", required=True,
+                     help="market tape: NDJSON events or a trades CSV")
+    p_t.add_argument("--decision-price", default=None, metavar="P",
+                     help="price when the decision was made (implementation shortfall)")
+    p_t.add_argument("--twap", type=parse_interval, default=None, metavar="INTERVAL",
+                     help="also compute TWAP at this sampling interval, e.g. 1m")
+    p_t.add_argument("--ts-unit", choices=["s", "ms", "us", "ns"], default=None,
+                     help="parse timestamps as epoch in this unit (default: ISO-8601)")
+    p_t.add_argument("--tolerance", type=int, default=0, metavar="NS",
+                     help="timestamp tolerance when matching your prints on the tape")
+    p_t.add_argument("--keep-own", action="store_true",
+                     help="do NOT remove your own prints from the benchmark "
+                          "(flatters the score; off by default for a reason)")
+    p_t.set_defaults(func=_cmd_tca)
 
     return parser
 
