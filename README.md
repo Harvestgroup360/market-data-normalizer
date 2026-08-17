@@ -349,6 +349,53 @@ forward, for the same reason nothing else here invents data.
 $ mdnorm tca fills.csv --market tape.jsonl --decision-price 100
 ```
 
+### Several instruments, one time grid
+
+Research wants a matrix — one row per timestamp, one column per instrument —
+and building it from independent tick streams is where look-ahead bias gets in,
+because every mistake here makes the backtest *better* rather than raising:
+
+```python
+from mdnorm import Field, align
+
+rows = align({"BTC": btc_events, "ETH": eth_events},
+             interval_ns=60_000_000_000,       # a one-minute grid
+             max_age_ns=5 * 60_000_000_000)    # nothing older than 5 minutes
+rows[0].values      # {"BTC": Decimal("60000"), "ETH": Decimal("3000")}
+rows[0].ages_ns     # how old each value was at that grid point
+rows[0].complete    # False if any column had nothing to show
+```
+
+**The join only looks backwards.** A value is visible at a grid point only if
+it was observed at or before it. "Nearest observation" is the expensive default
+in this area: on a one-minute grid it lets a print from 09:30:20 be read at
+09:30:00, and twenty seconds of hindsight is enough to make a mediocre signal
+look tradeable.
+
+**A bar labelled 09:30 is not knowable at 09:30.** It contains everything that
+traded until 09:31, so joining bars on their label imports an interval of the
+future. `AsOfSeries.from_bars` timestamps each bar at its *end*, and
+`align_bars` therefore gives you the last **closed** bar per column — one
+interval further back than the naive join, and the version you could have
+traded.
+
+**Forward-filling has no natural end.** A halted or delisted stream otherwise
+contributes its last price forever, and a frozen price correlates with nothing,
+which reads as diversification. With `max_age_ns` a quiet column becomes
+`None`; the age is still reported, so `row.stale` (had data, too old) and
+`row.missing` (never had data) stay distinguishable.
+
+**A feed you get late was not available on time.** `AsOfSeries.delayed(250ms)`
+shifts observation times forward by the delivery delay, so alignment reflects
+when you could have acted rather than when the source stamped it.
+
+Nothing interpolates or smooths. `align_on` takes timestamps you supply, for
+one row per print of a reference instrument, per signal, or per fill.
+
+```console
+$ mdnorm align BTC=btc.csv ETH=eth.jsonl --interval 1m --max-age 5m -o matrix.csv
+```
+
 ### Data quality
 
 ```python
@@ -439,6 +486,7 @@ $ mdnorm bars trades.csv --venue binance --interval 1m -o bars.csv
 $ mdnorm quality trades.csv --max-gap 5m
 $ mdnorm convert trades.csv -o trades.jsonl
 $ mdnorm bars trades.csv --interval 1d --actions actions.csv -o adjusted.csv
+$ mdnorm align BTC=btc.csv ETH=eth.csv --interval 1m --max-age 5m -o matrix.csv
 ```
 
 Also available as `python -m mdnorm`.
@@ -485,7 +533,8 @@ raw feed ──► normalizer ─────────────► MarketE
                     ├── micro.infer_sides()          who crossed the spread
                     ├── book.OrderBook()             deltas → live book → quotes
                     ├── consolidate()                many venues → one best bid/offer
-                    └── evaluate()                   your fills vs the market
+                    ├── evaluate()                   your fills vs the market
+                    └── align()                      N instruments → one time grid
 ```
 
 ## Tests

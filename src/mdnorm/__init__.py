@@ -17,6 +17,16 @@ from .adjust import (
     roll,
     split,
 )
+from .align import (
+    AlignedRow,
+    AsOfSeries,
+    BarField,
+    Field,
+    align,
+    align_bars,
+    align_on,
+    grid,
+)
 from .book import BookDelta, OrderBook, SequenceGapError, replay_book
 from .consolidate import CONSOLIDATED, Consolidator, VenueTop, consolidate
 from .execution import (
@@ -80,7 +90,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.8.0"
+__version__ = "1.9.0"
 
 __all__ = [
     "MarketEvent",
@@ -99,6 +109,14 @@ __all__ = [
     "volume_bars",
     "dollar_bars",
     "imbalance_bars",
+    "Field",
+    "BarField",
+    "AsOfSeries",
+    "AlignedRow",
+    "align",
+    "align_on",
+    "align_bars",
+    "grid",
     "BookDelta",
     "OrderBook",
     "SequenceGapError",

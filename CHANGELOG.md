@@ -3,7 +3,46 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [1.8.0] - 2026-08-17
+## [1.9.0] - 2026-08-17
+
+### Added
+- As-of alignment (`mdnorm.align`): `align` puts several instruments on one
+  regular time grid, `align_on` aligns to timestamps you supply, and
+  `align_bars` does it for bar series. Each `AlignedRow` carries a value per
+  column *and* the age of that value, so a row is self-describing.
+- `AsOfSeries` is the queryable primitive: `at(ts)` returns the last value
+  observed at or **before** `ts`, never the nearest in either direction.
+  Reaching forward for a closer observation is how look-ahead bias usually
+  enters an as-of join, and it produces a better backtest rather than an error.
+- `AsOfSeries.from_bars` timestamps every bar at `end_ns`, not at its label.
+  A one-minute bar labelled 09:30 covers everything until 09:31, so joining on
+  the label imports an interval of the future; `align_bars` consequently gives
+  the last *closed* bar per column.
+- `max_age_ns` expires a forward-filled value. A halted or delisted stream
+  otherwise contributes its last price to every later row, and a frozen price
+  correlates with nothing, which reads as diversification. `AlignedRow.stale`
+  (had data, too old) and `.missing` (never had data) are reported separately.
+- `AsOfSeries.delayed(by_ns)` shifts observation times forward by a delivery
+  delay, so alignment reflects when a feed was actually available rather than
+  when the source stamped it.
+- `Field` (price / mid / bid / ask) and `BarField` select which number a column
+  takes. Events lacking the requested field are skipped, not filled — a trade
+  has no mid, and neither does a one-sided quote.
+- New CLI subcommand: `mdnorm align BTC=btc.csv ETH=eth.jsonl --interval 1m
+  --max-age 5m -o matrix.csv`. It reports how many rows came out complete, and
+  says so when `--max-age` is omitted.
+
+### Notes
+- The default window runs from the first grid point that can hold data to the
+  first one at or after the last observation, so no leading row is empty and
+  no observation is left out of every row. Pinning `start_ns` and `end_ns`
+  makes separate runs line up row for row.
+- `grid()` refuses to build more than 10 million rows. A nanosecond grid over a
+  day is a wrong interval, not a request, and allocating it is worse than
+  failing.
+- Nothing here interpolates, smooths, or invents a value between observations.
+
+## [1.8.0] - 2026-08-16
 
 ### Added
 - Execution benchmarks (`mdnorm.execution`): `vwap`, `twap`,
@@ -35,7 +74,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   window is your own, removing it leaves no market, so the summary returns a
   null VWAP and 100% participation instead of a fabricated score.
 
-## [1.7.0] - 2026-08-16
+## [1.7.0] - 2026-08-15
 
 ### Added
 - Multi-venue quote consolidation (`mdnorm.consolidate`). `Consolidator`
@@ -131,7 +170,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   upward when they are not; the limitation has its own test rather than
   being smoothed over.
 
-## [1.4.0] - 2026-08-11
+## [1.4.0] - 2026-08-12
 
 ### Added
 - Corporate actions and contract rolls (`mdnorm.adjust`): back-adjust a
@@ -166,7 +205,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   README. Releases are published from CI via PyPI Trusted Publishing, so
   no long-lived API token exists. No library code changed in this release.
 
-## [1.3.0] - 2026-08-08
+## [1.3.0] - 2026-08-09
 
 ### Added
 - Trading sessions and calendar filtering (`mdnorm.sessions`): a `Session`
@@ -196,7 +235,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   ``.dollar_bars()``) and CLI flags (``--every-trades``, ``--every-volume``,
   ``--every-notional``) as alternatives to ``--interval``.
 
-## [1.1.0] - 2026-08-05
+## [1.1.0] - 2026-08-06
 
 ### Added
 - Transparent gzip support across all file I/O: any ``.gz`` path
@@ -240,7 +279,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   into one timestamp-ordered timeline (stable), and `dedupe(events)` drops exact
   duplicate events from reconnects/replays, preserving first-seen order.
 
-## [0.7.0] - 2026-08-01
+## [0.7.0] - 2026-08-02
 
 ### Added
 - Serialization: `event_to_dict`, `bar_to_dict` and `to_records` flatten
@@ -268,14 +307,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   (price outliers), gaps, out-of-order records and non-positive price/size,
   returning a structured `QualityIssue` report.
 
-## [0.3.0] - 2026-07-28
+## [0.3.0] - 2026-07-29
 
 ### Added
 - OHLCV time-bar aggregation: `time_bars(events, interval_ns)` and the `Bar`
   type (open/high/low/close/volume/trades/vwap). Handles out-of-order input
   and ignores non-trade events.
 
-## [0.2.0] - 2026-07-27
+## [0.2.0] - 2026-07-28
 
 ### Added
 - Quote (bid/ask) normalization: `from_ws_quote` (exchange book-ticker

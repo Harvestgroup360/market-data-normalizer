@@ -11,6 +11,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm book deltas.csv --symbol BTC-USD --venue binance -o quotes.jsonl
     mdnorm nbbo quotes.jsonl --symbol BTC-USD --max-age 2s -o top.jsonl
     mdnorm tca fills.csv --market tape.jsonl --decision-price 100
+    mdnorm align BTC=btc.csv ETH=eth.csv --interval 1m --max-age 5m -o matrix.csv
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -26,6 +27,7 @@ from typing import List, Optional
 
 from . import __version__
 from .adjust import AdjustMethod, adjust_events, read_actions_csv
+from .align import Field, align
 from .bars import (count_bars, dollar_bars, fill_gaps, imbalance_bars,
                    time_bars, volume_bars)
 from .book import BookDelta, OrderBook, replay_book
@@ -345,6 +347,68 @@ def _cmd_tca(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_align(args: argparse.Namespace) -> int:
+    import csv as _csv
+
+    columns = []
+    for spec in args.inputs:
+        if "=" not in spec:
+            print(f"error: expected NAME=path, got {spec!r}", file=sys.stderr)
+            return 1
+        name, path = spec.split("=", 1)
+        if not name or not path:
+            print(f"error: expected NAME=path, got {spec!r}", file=sys.stderr)
+            return 1
+        columns.append((name, path))
+    names = [n for n, _ in columns]
+    if len(set(names)) != len(names):
+        print("error: duplicate column names", file=sys.stderr)
+        return 1
+
+    streams = {}
+    for name, path in columns:
+        if _is_jsonl(path):
+            events = read_jsonl_events(path)
+        else:
+            events = read_csv_trades(path, venue=name, ts_unit=args.ts_unit)
+        streams[name] = events
+
+    rows = align(
+        streams,
+        interval_ns=args.interval,
+        field=Field(args.field),
+        max_age_ns=args.max_age,
+        require_all=args.require_all,
+    )
+    if not rows:
+        print("error: nothing to align (no stream carries the requested field)",
+              file=sys.stderr)
+        return 1
+
+    header = ["ts_ns"] + names + [f"{n}_age_ns" for n in names]
+    with open_text(args.output, "w") as fh:
+        w = _csv.writer(fh)
+        w.writerow(header)
+        for r in rows:
+            w.writerow(
+                [r.ts_ns]
+                + ["" if r.values[n] is None else str(r.values[n]) for n in names]
+                + ["" if r.ages_ns[n] is None else r.ages_ns[n] for n in names]
+            )
+
+    complete = sum(1 for r in rows if r.complete)
+    print(f"wrote {len(rows)} row(s) to {args.output}", file=sys.stderr)
+    print(f"complete rows: {complete}/{len(rows)}", file=sys.stderr)
+    stale = sum(1 for r in rows if r.stale)
+    if stale:
+        print(f"note: {stale} row(s) dropped a column for being older than "
+              f"the staleness window", file=sys.stderr)
+    if args.max_age is None:
+        print("note: no --max-age given, so a stream that stops contributes "
+              "its last price to every later row", file=sys.stderr)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mdnorm",
@@ -458,6 +522,29 @@ def build_parser() -> argparse.ArgumentParser:
                      help="do NOT remove your own prints from the benchmark "
                           "(flatters the score; off by default for a reason)")
     p_t.set_defaults(func=_cmd_tca)
+
+    p_a = sub.add_parser("align",
+                         help="join several instruments onto one time grid "
+                              "(as-of, never forward-looking)")
+    p_a.add_argument("inputs", nargs="+", metavar="NAME=PATH",
+                     help="one column per instrument, e.g. BTC=btc.csv ETH=eth.jsonl")
+    p_a.add_argument("-o", "--output", required=True, help="output CSV")
+    p_a.add_argument("--interval", type=parse_interval, required=True,
+                     help="grid interval, e.g. 1s, 1m, 1h")
+    p_a.add_argument("--field", choices=[f.value for f in Field],
+                     default=Field.PRICE.value,
+                     help="which value to take (default: price)")
+    p_a.add_argument("--max-age", type=parse_interval, default=None,
+                     metavar="DURATION",
+                     help="blank a column whose newest value is older than "
+                          "this, e.g. 5m — recommended, since forward-filling "
+                          "otherwise never expires")
+    p_a.add_argument("--require-all", action="store_true",
+                     help="drop rows where any column is missing")
+    p_a.add_argument("--ts-unit", choices=["s", "ms", "us", "ns"], default=None,
+                     help="parse CSV timestamps as epoch in this unit "
+                          "(default: ISO-8601)")
+    p_a.set_defaults(func=_cmd_align)
 
     return parser
 
