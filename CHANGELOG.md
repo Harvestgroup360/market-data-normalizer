@@ -3,6 +3,48 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.10.0] - 2026-08-18
+
+### Added
+- Features (`mdnorm.features`) computed on the matrix `align` produces:
+  `returns` (simple or log), `rolling_mean`, `rolling_std`, `rolling_zscore`,
+  `rolling_correlation`, `realized_volatility`, plus `column` and `timestamps`
+  for getting series in and out of an aligned matrix.
+- **Every statistic is trailing.** The value at index `i` is computed from
+  `values[i - window + 1 : i + 1]` and nothing else. A full-sample z-score —
+  standardising against the mean and standard deviation of the entire series —
+  hands every observation knowledge of a distribution nobody had at the time.
+  A parametrised test pins causality as a property across all seven functions:
+  change the tail of the input and every earlier output must be identical. A
+  second test demonstrates the full-sample form failing exactly that check.
+- A partial window returns `None` rather than a short statistic wearing the
+  full window's name, and a gap inside a window propagates instead of being
+  stepped over.
+- Zero dispersion gives `None`, not `0`, from `rolling_zscore` and
+  `rolling_correlation`. A frozen column is usually an unexpired forward-fill,
+  and reading its correlation as zero is how a dead feed looks like a hedge.
+- `periods_per_year(interval_ns, sessions_per_year=..., session_length_ns=...)`
+  requires the calendar to be stated. `realized_volatility` returns per-period
+  volatility unless a factor is supplied, because no annualisation default is
+  safe: the same minute bars are 525,600 periods a year on a continuous venue
+  and 98,280 on a cash equity session.
+- New CLI subcommand: `mdnorm features matrix.csv --returns log --zscore 60
+  --vol 60 --interval 1m --sessions-per-year 365 --session-length 24h -o
+  feats.csv`. Without the three annualisation flags it says the volatility is
+  per period rather than silently picking a calendar.
+
+### Fixed
+- `returns([])` returned `[None]` instead of `[]`. Output length now always
+  equals input length, so a feature series can be written back alongside the
+  grid it came from without an off-by-one.
+
+### Notes
+- `rolling_std` defaults to the sample form (`ddof=1`); a rolling window is a
+  sample of a longer process, not a population.
+- Statistics are computed at 34 digits of working precision. The CLI trims the
+  output to 12 significant digits by default (`--precision`), since writing 34
+  into a CSV is noise rather than accuracy.
+
 ## [1.9.0] - 2026-08-17
 
 ### Added

@@ -12,6 +12,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm nbbo quotes.jsonl --symbol BTC-USD --max-age 2s -o top.jsonl
     mdnorm tca fills.csv --market tape.jsonl --decision-price 100
     mdnorm align BTC=btc.csv ETH=eth.csv --interval 1m --max-age 5m -o matrix.csv
+    mdnorm features matrix.csv --returns log --zscore 60 --vol 60 -o feats.csv
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -22,12 +23,15 @@ from __future__ import annotations
 
 import argparse
 import sys
-from decimal import Decimal
+from decimal import Decimal, localcontext
 from typing import List, Optional
 
 from . import __version__
 from .adjust import AdjustMethod, adjust_events, read_actions_csv
 from .align import Field, align
+from .features import periods_per_year
+from .features import (ReturnMethod, realized_volatility, returns,
+                       rolling_correlation, rolling_zscore)
 from .bars import (count_bars, dollar_bars, fill_gaps, imbalance_bars,
                    time_bars, volume_bars)
 from .book import BookDelta, OrderBook, replay_book
@@ -409,6 +413,94 @@ def _cmd_align(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_features(args: argparse.Namespace) -> int:
+    import csv as _csv
+
+    with open_text(args.input) as fh:
+        rows = list(_csv.DictReader(fh))
+    if not rows:
+        print("error: empty input", file=sys.stderr)
+        return 1
+    header = list(rows[0])
+    if "ts_ns" not in header:
+        print("error: input needs a ts_ns column (use `mdnorm align` to make one)",
+              file=sys.stderr)
+        return 1
+
+    wanted = args.columns or [
+        c for c in header if c != "ts_ns" and not c.endswith("_age_ns")
+    ]
+    missing = [c for c in wanted if c not in header]
+    if missing:
+        print(f"error: no such column(s): {', '.join(missing)}", file=sys.stderr)
+        return 1
+
+    def series(name):
+        out = []
+        for r in rows:
+            raw = (r.get(name) or "").strip()
+            out.append(Decimal(raw) if raw else None)
+        return out
+
+    data = {c: series(c) for c in wanted}
+    out_cols = {}
+    for c in wanted:
+        out_cols[c] = data[c]
+        r = returns(data[c], method=ReturnMethod(args.returns))
+        out_cols[f"{c}_ret"] = r
+        if args.zscore:
+            out_cols[f"{c}_z{args.zscore}"] = rolling_zscore(data[c], args.zscore)
+        if args.vol:
+            ppy = None
+            if args.sessions_per_year and args.session_length and args.interval:
+                ppy = periods_per_year(
+                    args.interval,
+                    sessions_per_year=args.sessions_per_year,
+                    session_length_ns=args.session_length,
+                )
+            out_cols[f"{c}_vol{args.vol}"] = realized_volatility(
+                r, window=args.vol, periods_per_year=ppy
+            )
+
+    if args.correlate:
+        if len(wanted) < 2:
+            print("error: --correlate needs at least two columns", file=sys.stderr)
+            return 1
+        a, b = wanted[0], wanted[1]
+        out_cols[f"corr_{a}_{b}_{args.correlate}"] = rolling_correlation(
+            data[a], data[b], args.correlate
+        )
+
+    names = list(out_cols)
+
+    def fmt(v):
+        """Trim the working precision down to something readable.
+
+        The library computes at 34 digits so rounding never reaches a figure
+        anyone reports; writing all 34 into a CSV is noise, not accuracy.
+        """
+        if v is None:
+            return ""
+        with localcontext() as ctx:
+            ctx.prec = args.precision
+            return str(+v)
+
+    with open_text(args.output, "w") as fh:
+        w = _csv.writer(fh)
+        w.writerow(["ts_ns"] + names)
+        for i, r in enumerate(rows):
+            w.writerow([r["ts_ns"]] + [fmt(out_cols[n][i]) for n in names])
+
+    print(f"wrote {len(rows)} row(s), {len(names)} column(s) to {args.output}",
+          file=sys.stderr)
+    if args.vol and not (args.sessions_per_year and args.session_length
+                         and args.interval):
+        print("note: volatility is per period. To annualise, pass --interval, "
+              "--sessions-per-year and --session-length together; there is no "
+              "safe default.", file=sys.stderr)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mdnorm",
@@ -545,6 +637,36 @@ def build_parser() -> argparse.ArgumentParser:
                      help="parse CSV timestamps as epoch in this unit "
                           "(default: ISO-8601)")
     p_a.set_defaults(func=_cmd_align)
+
+    p_f = sub.add_parser("features",
+                         help="returns, rolling z-scores, volatility and "
+                              "correlation on an aligned matrix (never "
+                              "full-sample, never a partial window)")
+    p_f.add_argument("input", help="CSV with a ts_ns column, e.g. from `mdnorm align`")
+    p_f.add_argument("-o", "--output", required=True, help="output CSV")
+    p_f.add_argument("--columns", nargs="+", default=None, metavar="NAME",
+                     help="columns to use (default: every non-age column)")
+    p_f.add_argument("--returns", choices=[m.value for m in ReturnMethod],
+                     default=ReturnMethod.SIMPLE.value,
+                     help="return convention (default: simple)")
+    p_f.add_argument("--zscore", type=int, default=None, metavar="N",
+                     help="add a trailing z-score over N observations")
+    p_f.add_argument("--vol", type=int, default=None, metavar="N",
+                     help="add realized volatility of returns over N observations")
+    p_f.add_argument("--precision", type=int, default=12, metavar="N",
+                     help="significant digits in the output (default: 12)")
+    p_f.add_argument("--correlate", type=int, default=None, metavar="N",
+                     help="add the trailing correlation of the first two columns")
+    p_f.add_argument("--interval", type=parse_interval, default=None,
+                     help="grid interval of the input, for annualising volatility")
+    p_f.add_argument("--sessions-per-year", type=int, default=None, metavar="N",
+                     help="sessions in a year, e.g. 252 for cash equities, 365 "
+                          "for a continuous venue")
+    p_f.add_argument("--session-length", type=parse_interval, default=None,
+                     metavar="DURATION",
+                     help="length of one session, e.g. 6h for equities, 24h "
+                          "for a continuous venue")
+    p_f.set_defaults(func=_cmd_features)
 
     return parser
 

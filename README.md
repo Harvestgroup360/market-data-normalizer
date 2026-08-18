@@ -396,6 +396,51 @@ one row per print of a reference instrument, per signal, or per fill.
 $ mdnorm align BTC=btc.csv ETH=eth.jsonl --interval 1m --max-age 5m -o matrix.csv
 ```
 
+### Features that cannot see the future
+
+With the matrix built, the next step is turning prices into returns, z-scores,
+volatility and correlations. This is the second place look-ahead gets in, and
+it gets in just as quietly:
+
+```python
+from mdnorm import ReturnMethod, column, returns, rolling_zscore, realized_volatility
+
+px  = column(rows, "BTC")
+r   = returns(px, method=ReturnMethod.LOG)
+z   = rolling_zscore(px, window=60)          # trailing, never full-sample
+vol = realized_volatility(r, window=60)      # per period until you annualise it
+```
+
+**A full-sample z-score is look-ahead.** Subtracting the mean and dividing by
+the standard deviation *of the whole series* gives every observation knowledge
+of the distribution it sits in — including the part that had not happened yet.
+It is one line of code and it is everywhere. Every statistic here is trailing:
+the value at `i` comes from `values[i-window+1 : i+1]` and nothing else. There
+is a test that pins this as a property — change the tail of the input and every
+earlier output must be byte-identical — and a second test that shows the
+full-sample form failing it.
+
+**A partial window is not a result.** Until the window fills you get `None`,
+not a twenty-period statistic computed from three observations. A gap inside a
+window propagates for the same reason: stepping over the hole would compute a
+twenty-period number from nineteen and label it twenty.
+
+**A frozen series has no z-score and no correlation.** Zero dispersion makes
+both undefined, so both return `None` rather than `0`. Reading that zero as a
+correlation is how a dead feed becomes an apparent diversifier.
+
+**There is no default annualisation factor.** √252 is right for daily bars on a
+252-day calendar and wrong for almost everything else. `realized_volatility`
+returns per-period volatility unless you pass a factor, and `periods_per_year`
+makes you state the calendar rather than assume one — the same minute bars are
+525,600 periods a year on a continuous venue and 98,280 on a cash equity
+session.
+
+```console
+$ mdnorm features matrix.csv --returns log --zscore 60 --vol 60 \
+      --interval 1m --sessions-per-year 365 --session-length 24h -o feats.csv
+```
+
 ### Data quality
 
 ```python
@@ -487,6 +532,7 @@ $ mdnorm quality trades.csv --max-gap 5m
 $ mdnorm convert trades.csv -o trades.jsonl
 $ mdnorm bars trades.csv --interval 1d --actions actions.csv -o adjusted.csv
 $ mdnorm align BTC=btc.csv ETH=eth.csv --interval 1m --max-age 5m -o matrix.csv
+$ mdnorm features matrix.csv --returns log --zscore 60 --vol 60 -o feats.csv
 ```
 
 Also available as `python -m mdnorm`.
@@ -534,7 +580,8 @@ raw feed ──► normalizer ─────────────► MarketE
                     ├── book.OrderBook()             deltas → live book → quotes
                     ├── consolidate()                many venues → one best bid/offer
                     ├── evaluate()                   your fills vs the market
-                    └── align()                      N instruments → one time grid
+                    ├── align()                      N instruments → one time grid
+                    └── returns() / rolling_*()      features, trailing windows only
 ```
 
 ## Tests

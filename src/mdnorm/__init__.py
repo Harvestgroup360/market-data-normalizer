@@ -28,6 +28,18 @@ from .align import (
     grid,
 )
 from .book import BookDelta, OrderBook, SequenceGapError, replay_book
+from .features import (
+    ReturnMethod,
+    column,
+    periods_per_year,
+    realized_volatility,
+    returns,
+    rolling_correlation,
+    rolling_mean,
+    rolling_std,
+    rolling_zscore,
+    timestamps,
+)
 from .consolidate import CONSOLIDATED, Consolidator, VenueTop, consolidate
 from .execution import (
     ExecutionSummary,
@@ -90,7 +102,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.9.0"
+__version__ = "1.10.0"
 
 __all__ = [
     "MarketEvent",
@@ -117,6 +129,16 @@ __all__ = [
     "align_on",
     "align_bars",
     "grid",
+    "ReturnMethod",
+    "column",
+    "timestamps",
+    "returns",
+    "rolling_mean",
+    "rolling_std",
+    "rolling_zscore",
+    "rolling_correlation",
+    "realized_volatility",
+    "periods_per_year",
     "BookDelta",
     "OrderBook",
     "SequenceGapError",
