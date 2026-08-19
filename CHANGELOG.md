@@ -3,6 +3,45 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.11.0] - 2026-08-19
+
+### Added
+- Labels and leak-free splitting (`mdnorm.labels`): `forward_returns`,
+  `purged_splits`, `purged_train_test`, and a `Split` carrying the train and
+  test indices together with how many rows it discarded and why.
+- `forward_returns(values, horizon=N)` is the only function in the library that
+  looks forward, and it does so on purpose — it produces a label, not a
+  feature. It lives in its own module for that reason, and the final `N` rows
+  are `None` because their outcome has not happened yet.
+- **Purging.** A label with a horizon makes neighbouring rows describe the same
+  stretch of future. A training row whose label window reaches into a test
+  block has already shown the model most of the answer, and shuffling does not
+  help, because the rows genuinely are different rows that merely share an
+  outcome. `purged_splits` removes them and reports the count.
+- **Embargo.** Features have memory, so a rolling statistic computed just after
+  a test period is built partly from inside it. `embargo=N` drops the `N`
+  training rows following each test block. It defaults to 0 because the correct
+  value is the longest feature window in your dataset, which this function
+  cannot know; the CLI says so when it is left at zero.
+- A parametrised test asserts the core invariant directly across six
+  combinations of sample count, fold count, horizon and embargo: no training
+  index in any fold has a label window overlapping that fold's test block. A
+  second test builds the naive contiguous split and shows it failing the same
+  check with five leaking rows.
+- New CLI subcommand: `mdnorm labels feats.csv --column BTC --horizon 5
+  --splits 5 --embargo 60 -o ml.csv`, which appends the label column and prints
+  a per-fold report of train size, test size, purged and embargoed counts.
+
+### Notes
+- Test blocks are contiguous and in time order, and every sample is tested
+  exactly once. A shuffled split of a series with overlapping labels leaks in
+  both directions at once.
+- A fold's training set includes rows from after its test block, which is what
+  cross-validation means and what the embargo is for. Strictly walk-forward
+  evaluation is a matter of taking the training indices below the block.
+- The scheme follows López de Prado, *Advances in Financial Machine Learning*
+  (2018), ch. 7.
+
 ## [1.10.0] - 2026-08-18
 
 ### Added

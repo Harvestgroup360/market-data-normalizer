@@ -441,6 +441,47 @@ $ mdnorm features matrix.csv --returns log --zscore 60 --vol 60 \
       --interval 1m --sessions-per-year 365 --session-length 24h -o feats.csv
 ```
 
+### Labels, and a split that does not leak
+
+A label is the one series in a research dataset that is *allowed* to look
+forward — it is the thing you are predicting. That makes it the series which
+quietly contaminates every split it touches:
+
+```python
+from mdnorm import forward_returns, purged_splits
+
+y = forward_returns(prices, horizon=5)
+for split in purged_splits(len(prices), n_splits=5, horizon=5, embargo=60):
+    train, test = split.train, split.test
+```
+
+**A label with a horizon makes neighbouring rows overlap.** If the label at
+row `i` spans the next five bars, rows `i` through `i+5` all describe the same
+stretch of future. Put row `i` in train and row `i+3` in test and the model has
+already seen most of the answer. Shuffling does not help — the rows genuinely
+are different rows, they merely share an outcome. `purged_splits` drops the
+training samples whose label window reaches into each test block, and reports
+how many it dropped.
+
+**A gap after the test block is not enough, because features have memory.** A
+rolling statistic computed just after a test period is built partly from
+observations inside it. The `embargo` removes the training rows immediately
+following each block; set it to at least your longest feature window. It
+defaults to 0 because the right value is a property of your features, not of
+this function.
+
+**`forward_returns` looks forward on purpose.** It is the only function in the
+library that does, which is why it lives in `mdnorm.labels` rather than
+`mdnorm.features`. Its output belongs on the left-hand side of a model; feeding
+it back in as an input is not a subtle mistake.
+
+The purging and embargo scheme follows López de Prado, *Advances in Financial
+Machine Learning* (2018), ch. 7.
+
+```console
+$ mdnorm labels feats.csv --column BTC --horizon 5 --splits 5 --embargo 60 -o ml.csv
+```
+
 ### Data quality
 
 ```python
@@ -533,6 +574,7 @@ $ mdnorm convert trades.csv -o trades.jsonl
 $ mdnorm bars trades.csv --interval 1d --actions actions.csv -o adjusted.csv
 $ mdnorm align BTC=btc.csv ETH=eth.csv --interval 1m --max-age 5m -o matrix.csv
 $ mdnorm features matrix.csv --returns log --zscore 60 --vol 60 -o feats.csv
+$ mdnorm labels feats.csv --column BTC --horizon 5 --splits 5 -o ml.csv
 ```
 
 Also available as `python -m mdnorm`.
@@ -581,7 +623,8 @@ raw feed ──► normalizer ─────────────► MarketE
                     ├── consolidate()                many venues → one best bid/offer
                     ├── evaluate()                   your fills vs the market
                     ├── align()                      N instruments → one time grid
-                    └── returns() / rolling_*()      features, trailing windows only
+                    ├── returns() / rolling_*()      features, trailing windows only
+                    └── purged_splits()              folds whose labels do not overlap
 ```
 
 ## Tests

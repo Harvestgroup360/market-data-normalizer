@@ -27,6 +27,7 @@ from .align import (
     align_on,
     grid,
 )
+from .labels import Split, forward_returns, purged_splits, purged_train_test
 from .book import BookDelta, OrderBook, SequenceGapError, replay_book
 from .features import (
     ReturnMethod,
@@ -102,7 +103,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.10.0"
+__version__ = "1.11.0"
 
 __all__ = [
     "MarketEvent",
@@ -139,6 +140,10 @@ __all__ = [
     "rolling_correlation",
     "realized_volatility",
     "periods_per_year",
+    "forward_returns",
+    "Split",
+    "purged_splits",
+    "purged_train_test",
     "BookDelta",
     "OrderBook",
     "SequenceGapError",

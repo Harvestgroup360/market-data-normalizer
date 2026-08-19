@@ -13,6 +13,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm tca fills.csv --market tape.jsonl --decision-price 100
     mdnorm align BTC=btc.csv ETH=eth.csv --interval 1m --max-age 5m -o matrix.csv
     mdnorm features matrix.csv --returns log --zscore 60 --vol 60 -o feats.csv
+    mdnorm labels feats.csv --column BTC --horizon 5 --splits 5 --embargo 60 -o ml.csv
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -30,6 +31,7 @@ from . import __version__
 from .adjust import AdjustMethod, adjust_events, read_actions_csv
 from .align import Field, align
 from .features import periods_per_year
+from .labels import forward_returns, purged_splits
 from .features import (ReturnMethod, realized_volatility, returns,
                        rolling_correlation, rolling_zscore)
 from .bars import (count_bars, dollar_bars, fill_gaps, imbalance_bars,
@@ -501,6 +503,68 @@ def _cmd_features(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_labels(args: argparse.Namespace) -> int:
+    import csv as _csv
+
+    with open_text(args.input) as fh:
+        rows = list(_csv.DictReader(fh))
+    if not rows:
+        print("error: empty input", file=sys.stderr)
+        return 1
+    header = list(rows[0])
+    if "ts_ns" not in header:
+        print("error: input needs a ts_ns column (use `mdnorm align` to make one)",
+              file=sys.stderr)
+        return 1
+    if args.column not in header:
+        print(f"error: no column {args.column!r}; have: "
+              f"{', '.join(c for c in header if c != 'ts_ns')}", file=sys.stderr)
+        return 1
+
+    series = []
+    for r in rows:
+        raw = (r.get(args.column) or "").strip()
+        series.append(Decimal(raw) if raw else None)
+
+    y = forward_returns(series, horizon=args.horizon,
+                        method=ReturnMethod(args.returns))
+    name = f"{args.column}_fwd{args.horizon}"
+
+    with open_text(args.output, "w") as fh:
+        w = _csv.writer(fh)
+        w.writerow(header + [name])
+        for i, r in enumerate(rows):
+            value = ""
+            if y[i] is not None:
+                with localcontext() as ctx:
+                    ctx.prec = args.precision
+                    value = str(+y[i])
+            w.writerow([r.get(c, "") for c in header] + [value])
+
+    labelled = sum(1 for v in y if v is not None)
+    print(f"wrote {len(rows)} row(s) to {args.output}", file=sys.stderr)
+    print(f"labelled rows: {labelled}/{len(rows)} "
+          f"(the last {args.horizon} have no outcome yet)", file=sys.stderr)
+
+    if args.splits:
+        splits = purged_splits(len(rows), n_splits=args.splits,
+                               horizon=args.horizon, embargo=args.embargo)
+        print(f"\n{args.splits} purged folds "
+              f"(horizon {args.horizon}, embargo {args.embargo}):", file=sys.stderr)
+        for k, sp in enumerate(splits):
+            print(f"  fold {k}: train {len(sp.train):>6}  test {len(sp.test):>6}  "
+                  f"purged {sp.purged:>4}  embargoed {sp.embargoed:>4}",
+                  file=sys.stderr)
+        total = sum(sp.discarded for sp in splits)
+        print(f"  {total} training row(s) discarded across all folds to keep "
+              f"the test blocks clean", file=sys.stderr)
+        if args.embargo == 0:
+            print("note: embargo is 0. Set it to at least your longest feature "
+                  "window, or rows just after a test block will carry it.",
+                  file=sys.stderr)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mdnorm",
@@ -667,6 +731,27 @@ def build_parser() -> argparse.ArgumentParser:
                      help="length of one session, e.g. 6h for equities, 24h "
                           "for a continuous venue")
     p_f.set_defaults(func=_cmd_features)
+
+    p_l = sub.add_parser("labels",
+                         help="add a forward-return label and report purged, "
+                              "embargoed cross-validation folds")
+    p_l.add_argument("input", help="CSV with a ts_ns column, e.g. from `mdnorm align`")
+    p_l.add_argument("-o", "--output", required=True, help="output CSV")
+    p_l.add_argument("--column", required=True, metavar="NAME",
+                     help="price column to label")
+    p_l.add_argument("--horizon", type=int, required=True, metavar="N",
+                     help="label the return over the next N rows")
+    p_l.add_argument("--returns", choices=[m.value for m in ReturnMethod],
+                     default=ReturnMethod.SIMPLE.value,
+                     help="return convention (default: simple)")
+    p_l.add_argument("--splits", type=int, default=None, metavar="K",
+                     help="also report K purged cross-validation folds")
+    p_l.add_argument("--embargo", type=int, default=0, metavar="N",
+                     help="drop N training rows after each test block; set it "
+                          "to at least your longest feature window")
+    p_l.add_argument("--precision", type=int, default=12, metavar="N",
+                     help="significant digits in the output (default: 12)")
+    p_l.set_defaults(func=_cmd_labels)
 
     return parser
 
