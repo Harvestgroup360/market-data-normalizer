@@ -28,6 +28,15 @@ from .align import (
     grid,
 )
 from .labels import Split, forward_returns, purged_splits, purged_train_test
+from .universe import (
+    Listing,
+    Universe,
+    cross_section,
+    cross_sectional_rank,
+    cross_sectional_zscore,
+    mask_to_universe,
+    read_listings_csv,
+)
 from .book import BookDelta, OrderBook, SequenceGapError, replay_book
 from .features import (
     ReturnMethod,
@@ -103,7 +112,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.11.0"
+__version__ = "1.12.0"
 
 __all__ = [
     "MarketEvent",
@@ -144,6 +153,13 @@ __all__ = [
     "Split",
     "purged_splits",
     "purged_train_test",
+    "Listing",
+    "Universe",
+    "mask_to_universe",
+    "cross_sectional_rank",
+    "cross_sectional_zscore",
+    "cross_section",
+    "read_listings_csv",
     "BookDelta",
     "OrderBook",
     "SequenceGapError",

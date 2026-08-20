@@ -482,6 +482,43 @@ Machine Learning* (2018), ch. 7.
 $ mdnorm labels feats.csv --column BTC --horizon 5 --splits 5 --embargo 60 -o ml.csv
 ```
 
+### The instruments that existed then
+
+Two of the biases this library guards against are about time. The third is
+about membership: a universe assembled today did not exist in the past.
+
+```python
+from mdnorm import Universe, Listing, cross_section, cross_sectional_rank
+
+pit = Universe([Listing("AAA", listed_ns=...), Listing("BBB", listed_ns=..., delisted_ns=...)])
+ranks = cross_section(rows, cross_sectional_rank, universe=pit)
+```
+
+**Survivorship bias produces no strange values anywhere.** Take the names
+listed and liquid now, pull their history, rank them against each other over
+ten years, and every instrument in the study is one that survived. Unlike a
+look-ahead bug there is nothing odd to spot — the numbers are all real, the
+sample is just wrong.
+
+**Excluding a name is not the same as it having no data.** A symbol that has
+not listed yet, or delisted last month, belongs outside the cross-section
+rather than inside it as a blank — because a blank gets treated as missing at
+random, and the instruments that disappear from a market are the opposite of
+random. `mask_to_universe` returns the number of cells it removed; over a long
+window a count of zero usually means the listings file is present-day
+membership.
+
+**The size of the cross-section changes, and that is correct.** Percentile
+ranks are computed against the members present at that moment, so the
+denominator moves as instruments list and delist.
+
+Ties share an average rank, missing names are ranked neither last nor middle,
+and a flat cross-section has no z-score rather than a row of zeros.
+
+```console
+$ mdnorm universe matrix.csv --listings listings.csv --pct-rank -o pit.csv
+```
+
 ### Data quality
 
 ```python
@@ -575,6 +612,7 @@ $ mdnorm bars trades.csv --interval 1d --actions actions.csv -o adjusted.csv
 $ mdnorm align BTC=btc.csv ETH=eth.csv --interval 1m --max-age 5m -o matrix.csv
 $ mdnorm features matrix.csv --returns log --zscore 60 --vol 60 -o feats.csv
 $ mdnorm labels feats.csv --column BTC --horizon 5 --splits 5 -o ml.csv
+$ mdnorm universe matrix.csv --listings listings.csv --pct-rank -o pit.csv
 ```
 
 Also available as `python -m mdnorm`.
@@ -624,7 +662,8 @@ raw feed ──► normalizer ─────────────► MarketE
                     ├── evaluate()                   your fills vs the market
                     ├── align()                      N instruments → one time grid
                     ├── returns() / rolling_*()      features, trailing windows only
-                    └── purged_splits()              folds whose labels do not overlap
+                    ├── purged_splits()              folds whose labels do not overlap
+                    └── Universe.members_at()        who was actually listed then
 ```
 
 ## Tests

@@ -14,6 +14,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm align BTC=btc.csv ETH=eth.csv --interval 1m --max-age 5m -o matrix.csv
     mdnorm features matrix.csv --returns log --zscore 60 --vol 60 -o feats.csv
     mdnorm labels feats.csv --column BTC --horizon 5 --splits 5 --embargo 60 -o ml.csv
+    mdnorm universe matrix.csv --listings listings.csv --pct-rank -o pit.csv
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -32,6 +33,10 @@ from .adjust import AdjustMethod, adjust_events, read_actions_csv
 from .align import Field, align
 from .features import periods_per_year
 from .labels import forward_returns, purged_splits
+from .universe import (Universe, cross_section, cross_sectional_rank,
+                       cross_sectional_zscore, mask_to_universe,
+                       read_listings_csv)
+from .align import AlignedRow
 from .features import (ReturnMethod, realized_volatility, returns,
                        rolling_correlation, rolling_zscore)
 from .bars import (count_bars, dollar_bars, fill_gaps, imbalance_bars,
@@ -565,6 +570,88 @@ def _cmd_labels(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_universe(args: argparse.Namespace) -> int:
+    import csv as _csv
+
+    with open_text(args.input) as fh:
+        raw = list(_csv.DictReader(fh))
+    if not raw:
+        print("error: empty input", file=sys.stderr)
+        return 1
+    header = list(raw[0])
+    if "ts_ns" not in header:
+        print("error: input needs a ts_ns column (use `mdnorm align` to make one)",
+              file=sys.stderr)
+        return 1
+
+    columns = args.columns or [
+        c for c in header if c != "ts_ns" and not c.endswith("_age_ns")
+    ]
+    missing = [c for c in columns if c not in header]
+    if missing:
+        print(f"error: no such column(s): {', '.join(missing)}", file=sys.stderr)
+        return 1
+
+    rows = []
+    for r in raw:
+        values = {}
+        ages = {}
+        for c in columns:
+            cell = (r.get(c) or "").strip()
+            values[c] = Decimal(cell) if cell else None
+            age = (r.get(f"{c}_age_ns") or "").strip()
+            ages[c] = int(age) if age else None
+        rows.append(AlignedRow(ts_ns=int(r["ts_ns"]), values=values, ages_ns=ages))
+
+    universe = Universe(read_listings_csv(args.listings, ts_unit=args.ts_unit))
+    masked, removed = mask_to_universe(rows, universe)
+
+    ops = []
+    if args.rank:
+        ops.append(("rank", lambda v: cross_sectional_rank(v, pct=False)))
+    if args.pct_rank:
+        ops.append(("pct", lambda v: cross_sectional_rank(v, pct=True)))
+    if args.zscore:
+        ops.append(("xz", cross_sectional_zscore))
+
+    extra = {}
+    for suffix, fn in ops:
+        out_rows = cross_section(masked, fn)
+        for c in columns:
+            extra[f"{c}_{suffix}"] = [r.values[c] for r in out_rows]
+
+    names = list(columns) + list(extra)
+
+    def fmt(v):
+        if v is None:
+            return ""
+        with localcontext() as ctx:
+            ctx.prec = args.precision
+            return str(+v)
+
+    with open_text(args.output, "w") as fh:
+        w = _csv.writer(fh)
+        w.writerow(["ts_ns", "members"] + names)
+        for i, r in enumerate(masked):
+            members = sum(1 for c in columns if r.values[c] is not None)
+            w.writerow([r.ts_ns, members]
+                       + [fmt(r.values[c]) for c in columns]
+                       + [fmt(extra[n][i]) for n in extra])
+
+    sizes = [sum(1 for c in columns if r.values[c] is not None) for r in masked]
+    print(f"wrote {len(masked)} row(s) to {args.output}", file=sys.stderr)
+    print(f"masked {removed} cell(s) outside their listing window", file=sys.stderr)
+    if sizes:
+        print(f"cross-section size: min {min(sizes)}, max {max(sizes)}",
+              file=sys.stderr)
+    if removed == 0:
+        print("note: nothing was masked. Over a long window that usually means "
+              "the listings file is present-day membership rather than a "
+              "historical record — the definition of survivorship bias.",
+              file=sys.stderr)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mdnorm",
@@ -752,6 +839,28 @@ def build_parser() -> argparse.ArgumentParser:
     p_l.add_argument("--precision", type=int, default=12, metavar="N",
                      help="significant digits in the output (default: 12)")
     p_l.set_defaults(func=_cmd_labels)
+
+    p_u = sub.add_parser("universe",
+                         help="mask a matrix to point-in-time listings and "
+                              "rank across the names that really existed")
+    p_u.add_argument("input", help="CSV with a ts_ns column, e.g. from `mdnorm align`")
+    p_u.add_argument("-o", "--output", required=True, help="output CSV")
+    p_u.add_argument("--listings", required=True, metavar="PATH",
+                     help="CSV of symbol,listed,delisted (empty delisted = still listed)")
+    p_u.add_argument("--columns", nargs="+", default=None, metavar="NAME",
+                     help="columns to use (default: every non-age column)")
+    p_u.add_argument("--rank", action="store_true",
+                     help="add a cross-sectional rank per row")
+    p_u.add_argument("--pct-rank", action="store_true",
+                     help="add a cross-sectional percentile rank per row")
+    p_u.add_argument("--zscore", action="store_true",
+                     help="add a cross-sectional z-score per row")
+    p_u.add_argument("--ts-unit", choices=["s", "ms", "us", "ns"], default=None,
+                     help="parse listing timestamps as epoch in this unit "
+                          "(default: ISO-8601)")
+    p_u.add_argument("--precision", type=int, default=12, metavar="N",
+                     help="significant digits in the output (default: 12)")
+    p_u.set_defaults(func=_cmd_universe)
 
     return parser
 

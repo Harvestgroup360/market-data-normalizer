@@ -3,6 +3,43 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.12.0] - 2026-08-20
+
+### Added
+- Point-in-time membership and cross-sectional operations
+  (`mdnorm.universe`): `Listing`, `Universe`, `mask_to_universe`,
+  `cross_sectional_rank`, `cross_sectional_zscore`, `cross_section` and
+  `read_listings_csv`.
+- **Survivorship.** A universe assembled today did not exist in the past. Rank
+  the currently listed names against each other across ten years and every
+  instrument in the study is one that survived. `Universe.members_at(ts)`
+  answers who was actually tradable at a moment, and `cross_section(...,
+  universe=...)` masks each row to that answer before ranking.
+- A listing interval is half-open: `listed_ns` inclusive, `delisted_ns`
+  exclusive, so an instrument is not a member on the day it stops trading. A
+  symbol may list, delist and relist; every interval is kept.
+- `mask_to_universe` reports how many cells it removed. Over a long window a
+  count of zero usually means the listings file is present-day membership
+  rather than a historical record — which is the definition of the bias.
+- Missing names are ranked neither last nor middle: they are not in the
+  ordering at all. Ties share an average rank. Percentile ranks use the number
+  of members actually present, so the denominator follows the size of the
+  cross-section. A flat cross-section has no z-score rather than a row of
+  zeros, matching the treatment of zero dispersion in `mdnorm.features`.
+- New CLI subcommand: `mdnorm universe matrix.csv --listings listings.csv
+  --rank --pct-rank --zscore -o pit.csv`. It writes the number of members per
+  row, prints the masked-cell count and the minimum and maximum cross-section
+  size, and says so when nothing was masked.
+
+### Notes
+- A forward-filled price does not stop when an instrument does, so without a
+  universe a delisted name keeps taking a place in the ranking. There is a test
+  that demonstrates exactly that, and the same case end to end from ticks.
+- This completes the three biases the library is built around: reading a value
+  before it was observable (`align`), testing on labels that overlap the
+  training set (`labels`), and studying a sample chosen after the fact
+  (`universe`).
+
 ## [1.11.0] - 2026-08-19
 
 ### Added
