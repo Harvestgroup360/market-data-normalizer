@@ -15,6 +15,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm features matrix.csv --returns log --zscore 60 --vol 60 -o feats.csv
     mdnorm labels feats.csv --column BTC --horizon 5 --splits 5 --embargo 60 -o ml.csv
     mdnorm universe matrix.csv --listings listings.csv --pct-rank -o pit.csv
+    mdnorm revisions gdp.csv -o published.csv
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -33,6 +34,7 @@ from .adjust import AdjustMethod, adjust_events, read_actions_csv
 from .align import Field, align
 from .features import periods_per_year
 from .labels import forward_returns, purged_splits
+from .revisions import RevisionSeries, read_revisions_csv
 from .universe import (Universe, cross_section, cross_sectional_rank,
                        cross_sectional_zscore, mask_to_universe,
                        read_listings_csv)
@@ -652,6 +654,61 @@ def _cmd_universe(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_revisions(args: argparse.Namespace) -> int:
+    import csv as _csv
+
+    series = RevisionSeries(read_revisions_csv(args.input, ts_unit=args.ts_unit))
+    if len(series) == 0:
+        print("error: no revisions in the input", file=sys.stderr)
+        return 1
+
+    summary = series.revision_summary()
+
+    def fmt(v):
+        if v is None:
+            return "n/a"
+        with localcontext() as ctx:
+            ctx.prec = args.precision
+            return str(+v)
+
+    print(f"events              {summary.events}", file=sys.stderr)
+    print(f"revised at least once {summary.revised_events}"
+          f"  ({fmt(summary.revised_fraction)})", file=sys.stderr)
+    print(f"mean |final - first| {fmt(summary.mean_absolute_change)}",
+          file=sys.stderr)
+    print(f"max  |final - first| {fmt(summary.max_absolute_change)}",
+          file=sys.stderr)
+    if summary.revised_events:
+        print("note: a study built on final values reads corrections that were "
+              "not available at the time. The numbers above are how large that "
+              "advantage is.", file=sys.stderr)
+
+    if args.vintage is not None:
+        vintage = series.vintage_at(args.vintage)
+        with open_text(args.output, "w") as fh:
+            w = _csv.writer(fh)
+            w.writerow(["event_ts_ns", "value"])
+            for event in series.events:
+                value = series.as_of(event_ts_ns=event, known_ts_ns=args.vintage)
+                if value is not None:
+                    w.writerow([event, fmt(value)])
+        print(f"\nwrote the vintage as of {args.vintage} "
+              f"({len(vintage)} event(s)) to {args.output}", file=sys.stderr)
+        return 0
+
+    with open_text(args.output, "w") as fh:
+        w = _csv.writer(fh)
+        w.writerow(["known_ts_ns", "value"])
+        for event in series.events:
+            for k in series.published_at(event):
+                w.writerow([k, fmt(series.as_of(event_ts_ns=event,
+                                                known_ts_ns=k))])
+    print(f"\nwrote the publication stream to {args.output} — keyed by when "
+          f"each version became readable, so it joins like any other series",
+          file=sys.stderr)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mdnorm",
@@ -861,6 +918,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_u.add_argument("--precision", type=int, default=12, metavar="N",
                      help="significant digits in the output (default: 12)")
     p_u.set_defaults(func=_cmd_universe)
+
+    p_r = sub.add_parser("revisions",
+                         help="measure how far corrections move a series, and "
+                              "emit either the publication stream or a vintage")
+    p_r.add_argument("input", help="CSV of event,known,value")
+    p_r.add_argument("-o", "--output", required=True, help="output CSV")
+    p_r.add_argument("--vintage", type=int, default=None, metavar="TS_NS",
+                     help="write the dataset as it looked at this instant "
+                          "(keyed by event time) instead of the publication "
+                          "stream (keyed by when each version was readable)")
+    p_r.add_argument("--ts-unit", choices=["s", "ms", "us", "ns"], default=None,
+                     help="parse timestamps as epoch in this unit "
+                          "(default: ISO-8601)")
+    p_r.add_argument("--precision", type=int, default=12, metavar="N",
+                     help="significant digits in the output (default: 12)")
+    p_r.set_defaults(func=_cmd_revisions)
 
     return parser
 

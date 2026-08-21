@@ -3,6 +3,43 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.13.0] - 2026-08-21
+
+### Added
+- Bitemporal observations (`mdnorm.revisions`): `Revision`, `RevisionSeries`,
+  `RevisionSummary` and `read_revisions_csv`. An observation carries two
+  timestamps — the period it describes and the moment it became knowable — and
+  the same period may be published more than once.
+- `as_of(event_ts_ns=..., known_ts_ns=...)` returns the version that had been
+  released by a given moment, and `None` before the first release rather than
+  the first release brought forward.
+- **Using a corrected value is look-ahead that no timestamp check catches.**
+  The row is dated correctly and the value was genuinely published; nothing
+  marks it as unavailable until later. Every guard in `mdnorm.align` passes and
+  the study is still wrong. `first_release` and `final` make the two visible
+  side by side.
+- Two objects for two different questions. `known_series()` is keyed by
+  publication time and answers "what was the newest number available at t" —
+  safe to join as a feature. `vintage_at(t)` is keyed by event time and
+  reproduces the table as it appeared that day. A test demonstrates a vintage
+  read at the wrong moment reporting a value nobody had.
+- `revision_summary()` reports how many events were ever revised, the mean and
+  maximum absolute distance from first release to final value, and the revised
+  fraction. Republishing an unchanged number does not count as a revision.
+- A `Revision` whose `known_ts_ns` precedes its `event_ts_ns` is rejected: a
+  value available before the period it describes is a forecast, which is a
+  different object with different properties.
+- New CLI subcommand: `mdnorm revisions gdp.csv -o published.csv`, printing the
+  revision diagnostics and writing either the publication stream or, with
+  `--vintage`, the dataset as of an instant.
+
+### Notes
+- `known_series()` returns an `AsOfSeries`, so a revised feed drops straight
+  into `mdnorm.align` alongside tick data with no special handling.
+- A delivery delay and a revision are different problems: `AsOfSeries.delayed`
+  shifts a value that never changes, while a revision replaces it. There is a
+  test contrasting the two.
+
 ## [1.12.0] - 2026-08-20
 
 ### Added

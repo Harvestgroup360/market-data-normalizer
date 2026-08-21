@@ -28,6 +28,12 @@ from .align import (
     grid,
 )
 from .labels import Split, forward_returns, purged_splits, purged_train_test
+from .revisions import (
+    Revision,
+    RevisionSeries,
+    RevisionSummary,
+    read_revisions_csv,
+)
 from .universe import (
     Listing,
     Universe,
@@ -112,7 +118,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.12.0"
+__version__ = "1.13.0"
 
 __all__ = [
     "MarketEvent",
@@ -153,6 +159,10 @@ __all__ = [
     "Split",
     "purged_splits",
     "purged_train_test",
+    "Revision",
+    "RevisionSeries",
+    "RevisionSummary",
+    "read_revisions_csv",
     "Listing",
     "Universe",
     "mask_to_universe",

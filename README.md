@@ -517,6 +517,45 @@ and a flat cross-section has no z-score rather than a row of zeros.
 
 ```console
 $ mdnorm universe matrix.csv --listings listings.csv --pct-rank -o pit.csv
+$ mdnorm revisions gdp.csv -o published.csv
+```
+
+### Values that get corrected later
+
+Every observation so far has had one timestamp: when it happened. A lot of real
+data has two — the period it describes, and the moment it became knowable — and
+then it gets revised.
+
+```python
+from mdnorm import Revision, RevisionSeries
+
+series = RevisionSeries([
+    Revision(event_ts_ns=q1, known_ts_ns=april, value=D("2.1")),
+    Revision(event_ts_ns=q1, known_ts_ns=may,   value=D("1.6")),   # revised down
+])
+series.as_of(event_ts_ns=q1, known_ts_ns=april_20)   # 2.1 — what you knew
+series.final(event_ts_ns=q1)                          # 1.6 — what is true now
+```
+
+**Using the corrected value is look-ahead, and no timestamp check will catch
+it.** The row is dated correctly. The value is a real number that was genuinely
+published. Nothing marks it as unavailable until three weeks later. Every guard
+in `mdnorm.align` passes and the study is still wrong.
+
+**Two honest questions, two different objects.** *What was the newest published
+number at time t* is a feature — `known_series()` is keyed by publication time
+and joins like any other stream. *What did the whole table look like at time t*
+is a vintage — `vintage_at(t)` is keyed by event time and reproduces the sheet
+as it appeared that day. Reading a vintage at the wrong moment gives a value
+nobody had; there is a test that shows exactly that.
+
+**Measure it rather than assuming.** `revision_summary()` reports how many
+events were ever revised and how far first releases sat from final values. If
+that number is large, every backtest built on final data has been reading
+answers.
+
+```console
+$ mdnorm revisions gdp.csv -o published.csv
 ```
 
 ### Data quality
@@ -613,6 +652,7 @@ $ mdnorm align BTC=btc.csv ETH=eth.csv --interval 1m --max-age 5m -o matrix.csv
 $ mdnorm features matrix.csv --returns log --zscore 60 --vol 60 -o feats.csv
 $ mdnorm labels feats.csv --column BTC --horizon 5 --splits 5 -o ml.csv
 $ mdnorm universe matrix.csv --listings listings.csv --pct-rank -o pit.csv
+$ mdnorm revisions gdp.csv -o published.csv
 ```
 
 Also available as `python -m mdnorm`.
@@ -663,7 +703,8 @@ raw feed ──► normalizer ─────────────► MarketE
                     ├── align()                      N instruments → one time grid
                     ├── returns() / rolling_*()      features, trailing windows only
                     ├── purged_splits()              folds whose labels do not overlap
-                    └── Universe.members_at()        who was actually listed then
+                    ├── Universe.members_at()        who was actually listed then
+                    └── RevisionSeries.as_of()       which version you had then
 ```
 
 ## Tests
