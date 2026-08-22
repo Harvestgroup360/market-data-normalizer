@@ -28,6 +28,28 @@ from .align import (
     grid,
 )
 from .labels import Split, forward_returns, purged_splits, purged_train_test
+from .metrics import (
+    Drawdown,
+    Moments,
+    SharpeReport,
+    annualise_sharpe,
+    calmar_ratio,
+    deflated_sharpe_ratio,
+    drawdowns,
+    equity_curve,
+    expected_max_sharpe,
+    hit_rate,
+    max_drawdown,
+    min_track_record_length,
+    moments,
+    probabilistic_sharpe_ratio,
+    profit_factor,
+    sharpe_ratio,
+    sharpe_report,
+    sortino_ratio,
+    trial_variance,
+    turnover,
+)
 from .revisions import (
     Revision,
     RevisionSeries,
@@ -118,7 +140,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.13.0"
+__version__ = "1.14.0"
 
 __all__ = [
     "MarketEvent",
@@ -159,6 +181,26 @@ __all__ = [
     "Split",
     "purged_splits",
     "purged_train_test",
+    "Drawdown",
+    "Moments",
+    "SharpeReport",
+    "moments",
+    "equity_curve",
+    "drawdowns",
+    "max_drawdown",
+    "sharpe_ratio",
+    "annualise_sharpe",
+    "sortino_ratio",
+    "calmar_ratio",
+    "hit_rate",
+    "profit_factor",
+    "turnover",
+    "probabilistic_sharpe_ratio",
+    "min_track_record_length",
+    "expected_max_sharpe",
+    "trial_variance",
+    "deflated_sharpe_ratio",
+    "sharpe_report",
     "Revision",
     "RevisionSeries",
     "RevisionSummary",

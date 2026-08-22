@@ -558,6 +558,54 @@ answers.
 $ mdnorm revisions gdp.csv -o published.csv
 ```
 
+### How much of the result is the search
+
+Everything above is about getting the data right. The last step is a correct
+dataset that still produces a misleading number, because the number was
+chosen. A Sharpe ratio from one strategy is an estimate; the same ratio kept
+after trying two hundred parameter sets is a maximum, and the maximum of two
+hundred draws from noise is not small.
+
+```python
+from mdnorm import sharpe_report
+
+rep = sharpe_report(daily_returns, periods_per_year=D(252),
+                    trials=500, trial_sharpe_variance=D("0.004"))
+
+rep.sharpe_annualised   # 0.56  — the figure that goes in the deck
+rep.probabilistic       # 0.92  — probability the true ratio is above zero
+rep.deflated            # 0.008 — after accounting for 500 attempts
+rep.demonstrated        # False — the sample is shorter than it needs to be
+rep.warnings            # what the headline number does not say
+```
+
+**Ratios are per period until you state the calendar.** `sharpe_ratio` divides
+mean by standard deviation and stops; `annualise_sharpe` needs a factor, for
+the same reason `realized_volatility` does. Being wrong by a constant is the
+hardest kind of wrong to notice, because the shape of the series is unchanged.
+
+**A short track record is not evidence.** `min_track_record_length` says how
+many periods a ratio needs before it is distinguishable from the benchmark.
+A strategy whose minimum is nine years and whose backtest is eighteen months
+has not been demonstrated, however good the ratio looks.
+
+**Selection is measurable.** `expected_max_sharpe(trials, variance)` is the
+best ratio a search of that size produces from strategies that are all
+worthless. `deflated_sharpe_ratio` measures your result against that instead
+of against zero, following Bailey and López de Prado (2014). Pass the whole
+search, not the survivors.
+
+**Nothing here returns a flattering placeholder.** A series that never moved
+has no Sharpe, a sample with no losing period has no measurable downside, a
+curve that never fell has no drawdown — all `None`, not zero and not infinity.
+Each of them is a statement about the sample being short.
+
+```console
+$ mdnorm metrics pnl.csv --column ret --interval 1d \
+    --sessions-per-year 252 --session-length 6h \
+    --trials 500 --trial-variance 0.004
+```
+
 ### Data quality
 
 ```python
@@ -653,6 +701,7 @@ $ mdnorm features matrix.csv --returns log --zscore 60 --vol 60 -o feats.csv
 $ mdnorm labels feats.csv --column BTC --horizon 5 --splits 5 -o ml.csv
 $ mdnorm universe matrix.csv --listings listings.csv --pct-rank -o pit.csv
 $ mdnorm revisions gdp.csv -o published.csv
+$ mdnorm metrics pnl.csv --column ret --trials 500 --trial-variance 0.004
 ```
 
 Also available as `python -m mdnorm`.
@@ -704,7 +753,8 @@ raw feed ──► normalizer ─────────────► MarketE
                     ├── returns() / rolling_*()      features, trailing windows only
                     ├── purged_splits()              folds whose labels do not overlap
                     ├── Universe.members_at()        who was actually listed then
-                    └── RevisionSeries.as_of()       which version you had then
+                    ├── RevisionSeries.as_of()       which version you had then
+                    └── sharpe_report()              and how much of it is the search
 ```
 
 ## Tests
@@ -715,7 +765,9 @@ pytest -q
 ```
 
 The suite includes a cross-venue equivalence test proving CSV, WebSocket and
-FIX representations of one trade collapse to an identical event.
+FIX representations of one trade collapse to an identical event, and a
+causality property applied across the feature layer: change the tail of an
+input, and every output before the change must be byte-identical.
 
 ## License
 

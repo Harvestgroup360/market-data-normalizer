@@ -16,6 +16,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm labels feats.csv --column BTC --horizon 5 --splits 5 --embargo 60 -o ml.csv
     mdnorm universe matrix.csv --listings listings.csv --pct-rank -o pit.csv
     mdnorm revisions gdp.csv -o published.csv
+    mdnorm metrics pnl.csv --column ret --trials 200 --trial-variance 0.02
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -34,6 +35,8 @@ from .adjust import AdjustMethod, adjust_events, read_actions_csv
 from .align import Field, align
 from .features import periods_per_year
 from .labels import forward_returns, purged_splits
+from .metrics import (drawdowns, equity_curve, hit_rate, max_drawdown,
+                      profit_factor, sharpe_report, sortino_ratio)
 from .revisions import RevisionSeries, read_revisions_csv
 from .universe import (Universe, cross_section, cross_sectional_rank,
                        cross_sectional_zscore, mask_to_universe,
@@ -709,6 +712,115 @@ def _cmd_revisions(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_metrics(args: argparse.Namespace) -> int:
+    import csv as _csv
+
+    with open_text(args.input) as fh:
+        rows = list(_csv.DictReader(fh))
+    if not rows:
+        print("error: empty input", file=sys.stderr)
+        return 1
+    if args.column not in rows[0]:
+        print(f"error: no such column: {args.column}", file=sys.stderr)
+        return 1
+
+    raw: List[Optional[Decimal]] = []
+    for r in rows:
+        cell = (r.get(args.column) or "").strip()
+        raw.append(Decimal(cell) if cell else None)
+
+    if args.prices:
+        series = returns(raw, method=ReturnMethod(args.returns))
+    else:
+        series = raw
+
+    ppy = None
+    if args.sessions_per_year and args.session_length and args.interval:
+        ppy = periods_per_year(
+            args.interval,
+            sessions_per_year=args.sessions_per_year,
+            session_length_ns=args.session_length,
+        )
+
+    if (args.trials is None) != (args.trial_variance is None):
+        print("error: --trials and --trial-variance must be given together. "
+              "The deflated figure is the one that changes the conclusion; "
+              "half of it is not an answer.", file=sys.stderr)
+        return 1
+
+    rep = sharpe_report(
+        series,
+        risk_free=Decimal(args.risk_free),
+        periods_per_year=ppy,
+        confidence=Decimal(args.confidence),
+        trials=args.trials,
+        trial_sharpe_variance=(None if args.trial_variance is None
+                               else Decimal(args.trial_variance)),
+    )
+
+    def fmt(v):
+        if v is None:
+            return "n/a"
+        with localcontext() as ctx:
+            ctx.prec = args.precision
+            return str(+v)
+
+    curve = equity_curve(series)
+    worst = max_drawdown(curve)
+    closed = [d for d in drawdowns(curve) if d.recovered]
+
+    print(f"observations         {rep.observations}", file=sys.stderr)
+    if rep.skipped:
+        print(f"missing              {rep.skipped}", file=sys.stderr)
+    print(f"Sharpe (per period)  {fmt(rep.sharpe)}", file=sys.stderr)
+    print(f"Sharpe (annualised)  {fmt(rep.sharpe_annualised)}", file=sys.stderr)
+    print(f"Sortino (per period) {fmt(sortino_ratio(series))}", file=sys.stderr)
+    print(f"skewness             {fmt(rep.skewness)}", file=sys.stderr)
+    print(f"kurtosis (non-excess) {fmt(rep.kurtosis)}", file=sys.stderr)
+    print(f"hit rate             {fmt(hit_rate(series))}", file=sys.stderr)
+    print(f"profit factor        {fmt(profit_factor(series))}", file=sys.stderr)
+    if worst is None:
+        print("max drawdown         none in this sample", file=sys.stderr)
+    else:
+        print(f"max drawdown         {fmt(worst.depth)}"
+              f"  (peak {worst.peak_index} -> trough {worst.trough_index}"
+              f"{'' if worst.recovered else ', not recovered'})",
+              file=sys.stderr)
+        print(f"drawdowns recovered  {len(closed)} of {len(drawdowns(curve))}",
+              file=sys.stderr)
+    print(f"P(Sharpe > 0)        {fmt(rep.probabilistic)}", file=sys.stderr)
+    print(f"min track record     {fmt(rep.min_track_record)} period(s) "
+          f"at {args.confidence} confidence", file=sys.stderr)
+    if rep.trials is not None:
+        print(f"deflated ({rep.trials} trials) {fmt(rep.deflated)}",
+              file=sys.stderr)
+
+    for w in rep.warnings:
+        print(f"note: {w}", file=sys.stderr)
+
+    if args.output:
+        with open_text(args.output, "w") as fh:
+            w = _csv.writer(fh)
+            w.writerow(["metric", "value"])
+            w.writerow(["observations", rep.observations])
+            w.writerow(["missing", rep.skipped])
+            w.writerow(["sharpe_per_period", fmt(rep.sharpe)])
+            w.writerow(["sharpe_annualised", fmt(rep.sharpe_annualised)])
+            w.writerow(["sortino_per_period", fmt(sortino_ratio(series))])
+            w.writerow(["skewness", fmt(rep.skewness)])
+            w.writerow(["kurtosis", fmt(rep.kurtosis)])
+            w.writerow(["hit_rate", fmt(hit_rate(series))])
+            w.writerow(["profit_factor", fmt(profit_factor(series))])
+            w.writerow(["max_drawdown", "n/a" if worst is None
+                        else fmt(worst.depth)])
+            w.writerow(["probabilistic_sharpe", fmt(rep.probabilistic)])
+            w.writerow(["min_track_record_periods", fmt(rep.min_track_record)])
+            w.writerow(["deflated_sharpe", fmt(rep.deflated)])
+            w.writerow(["trials", "n/a" if rep.trials is None else rep.trials])
+        print(f"\nwrote {args.output}", file=sys.stderr)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mdnorm",
@@ -934,6 +1046,42 @@ def build_parser() -> argparse.ArgumentParser:
     p_r.add_argument("--precision", type=int, default=12, metavar="N",
                      help="significant digits in the output (default: 12)")
     p_r.set_defaults(func=_cmd_revisions)
+
+    p_m = sub.add_parser("metrics",
+                         help="Sharpe, Sortino, drawdowns — and how much of "
+                              "the result the search itself explains")
+    p_m.add_argument("input", help="CSV containing a column of returns or prices")
+    p_m.add_argument("--column", required=True, metavar="NAME",
+                     help="column to read")
+    p_m.add_argument("--prices", action="store_true",
+                     help="the column holds prices; convert to returns first")
+    p_m.add_argument("--returns", choices=[m.value for m in ReturnMethod],
+                     default=ReturnMethod.SIMPLE.value,
+                     help="return convention when --prices is given")
+    p_m.add_argument("-o", "--output", default=None,
+                     help="also write the figures to a CSV")
+    p_m.add_argument("--risk-free", default="0", metavar="RATE",
+                     help="risk-free rate per period, not per year (default: 0)")
+    p_m.add_argument("--confidence", default="0.95", metavar="P",
+                     help="confidence for the minimum track record length "
+                          "(default: 0.95)")
+    p_m.add_argument("--trials", type=int, default=None, metavar="N",
+                     help="how many configurations were evaluated before this "
+                          "one was chosen; enables the deflated Sharpe ratio")
+    p_m.add_argument("--trial-variance", default=None, metavar="V",
+                     help="variance of the Sharpe ratios across those trials")
+    p_m.add_argument("--precision", type=int, default=6, metavar="N",
+                     help="significant digits in the output (default: 6)")
+    p_m.add_argument("--interval", type=parse_interval, default=None,
+                     help="observation interval, for annualising the ratios")
+    p_m.add_argument("--sessions-per-year", type=int, default=None, metavar="N",
+                     help="sessions in a year, e.g. 252 for cash equities, 365 "
+                          "for a continuous venue")
+    p_m.add_argument("--session-length", type=parse_interval, default=None,
+                     metavar="DURATION",
+                     help="length of one session, e.g. 6h for equities, 24h "
+                          "for a continuous venue")
+    p_m.set_defaults(func=_cmd_metrics)
 
     return parser
 

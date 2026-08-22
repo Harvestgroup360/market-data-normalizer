@@ -107,3 +107,98 @@ def test_missing_input_is_reported(tmp_path, capsys):
     rc = main(["quality", str(tmp_path / "nope.csv")])
     assert rc == 1
     assert "error:" in capsys.readouterr().err
+
+
+# -- metrics -----------------------------------------------------------------
+
+
+def _returns_csv(path, values):
+    with open(path, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["ts_ns", "ret"])
+        for i, v in enumerate(values):
+            w.writerow([i, v])
+    return str(path)
+
+
+_PNL = ["0.004", "-0.002", "0.006", "0.001", "-0.005", "0.003", "0.002",
+        "-0.001", "0.005", "0.000", "0.002", "-0.003", "0.004", "0.001"]
+
+
+def test_metrics_reports_the_basics(tmp_path, capsys):
+    src = _returns_csv(tmp_path / "pnl.csv", _PNL)
+    assert main(["metrics", src, "--column", "ret"]) == 0
+    err = capsys.readouterr().err
+    assert "observations         14" in err
+    assert "Sharpe (per period)" in err
+    assert "max drawdown" in err
+
+
+def test_metrics_is_per_period_without_a_calendar(tmp_path, capsys):
+    src = _returns_csv(tmp_path / "pnl.csv", _PNL)
+    assert main(["metrics", src, "--column", "ret"]) == 0
+    err = capsys.readouterr().err
+    assert "Sharpe (annualised)  n/a" in err
+    assert "no safe default" in err or "per period" in err
+
+
+def test_metrics_annualises_when_given_the_calendar(tmp_path, capsys):
+    src = _returns_csv(tmp_path / "pnl.csv", _PNL)
+    rc = main(["metrics", src, "--column", "ret", "--interval", "1d",
+               "--sessions-per-year", "252", "--session-length", "6h"])
+    assert rc == 0
+    assert "Sharpe (annualised)  n/a" not in capsys.readouterr().err
+
+
+def test_metrics_warns_when_no_trial_count_is_given(tmp_path, capsys):
+    src = _returns_csv(tmp_path / "pnl.csv", _PNL)
+    assert main(["metrics", src, "--column", "ret"]) == 0
+    assert "configurations were tried" in capsys.readouterr().err
+
+
+def test_metrics_deflates_a_search(tmp_path, capsys):
+    src = _returns_csv(tmp_path / "pnl.csv", _PNL)
+    rc = main(["metrics", src, "--column", "ret",
+               "--trials", "5000", "--trial-variance", "0.05"])
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "deflated (5000 trials)" in err
+    assert "not clearly better" in err
+
+
+def test_metrics_rejects_half_a_search(tmp_path, capsys):
+    src = _returns_csv(tmp_path / "pnl.csv", _PNL)
+    rc = main(["metrics", src, "--column", "ret", "--trials", "10"])
+    assert rc == 1
+    assert "must be given together" in capsys.readouterr().err
+
+
+def test_metrics_accepts_prices(tmp_path, capsys):
+    src = _returns_csv(tmp_path / "px.csv", ["100", "101", "99", "103", "102"])
+    assert main(["metrics", src, "--column", "ret", "--prices"]) == 0
+    err = capsys.readouterr().err
+    assert "observations         4" in err
+    assert "missing              1" in err  # the first return has no predecessor
+
+
+def test_metrics_writes_a_csv(tmp_path):
+    src = _returns_csv(tmp_path / "pnl.csv", _PNL)
+    out = tmp_path / "metrics.csv"
+    assert main(["metrics", src, "--column", "ret", "-o", str(out)]) == 0
+    rows = {r[0]: r[1] for r in csv.reader(open(out))}
+    assert rows["observations"] == "14"
+    assert "sharpe_per_period" in rows
+    assert rows["trials"] == "n/a"
+
+
+def test_metrics_rejects_an_unknown_column(tmp_path, capsys):
+    src = _returns_csv(tmp_path / "pnl.csv", _PNL)
+    assert main(["metrics", src, "--column", "nope"]) == 1
+    assert "no such column" in capsys.readouterr().err
+
+
+def test_metrics_rejects_an_empty_file(tmp_path, capsys):
+    src = tmp_path / "empty.csv"
+    src.write_text("ts_ns,ret\n")
+    assert main(["metrics", str(src), "--column", "ret"]) == 1
+    assert "empty input" in capsys.readouterr().err

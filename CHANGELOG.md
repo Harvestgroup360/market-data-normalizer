@@ -3,6 +3,45 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.14.0] - 2026-08-22
+
+### Added
+- Performance statistics (`mdnorm.metrics`): `sharpe_ratio`, `sortino_ratio`,
+  `calmar_ratio`, `hit_rate`, `profit_factor`, `turnover`, `equity_curve`,
+  `drawdowns`, `max_drawdown`, `moments`, and the `SharpeReport` that ties them
+  together. No new runtime dependencies: the normal CDF and its inverse are
+  built from `math.erf` and refined by a Halley step.
+- **Selection is the fifth way a backtest flatters you, and it survives a
+  perfect pipeline.** No value read early, no label overlapping a test block,
+  no sample chosen after the fact, no figure revised — and the number is still
+  wrong, because it was picked as the best of many. `expected_max_sharpe`
+  reports the ratio a search of a given size produces from strategies that are
+  all worthless; `deflated_sharpe_ratio` measures a result against that instead
+  of against zero. Bailey and López de Prado (2012, 2014).
+- `probabilistic_sharpe_ratio` and `min_track_record_length`: a ratio of 1.0
+  from sixty observations and the same ratio from six hundred are the same
+  number and not the same evidence. Negative skew and fat tails both lower the
+  probability, so a strategy that sells insurance scores worse than its
+  headline figure suggests.
+- `SharpeReport.warnings` states what the ratio leaves out — that it is per
+  period, that observations were missing, that the sample is shorter than the
+  minimum track record length, that no trial count was supplied. Requesting a
+  deflated ratio with only half its inputs is an error rather than a silent
+  omission.
+- No default annualisation, matching `mdnorm.features`: `annualise_sharpe` is a
+  separate call that requires the calendar.
+- Zero dispersion returns `None` rather than zero or infinity. A series that
+  never moved has no Sharpe, a sample with no losing period has no measurable
+  downside, and a curve that never fell has no drawdown; each is a fact about
+  the sample length.
+- A drawdown still open at the end of the sample keeps `recovery_index=None`
+  instead of being closed at the last observation — the one most often dropped
+  from a table, because it has no end date to put in it.
+- `mdnorm metrics` subcommand, reporting the figures above and every warning
+  attached to them.
+- 105 new tests (610 total), including a causality property on the equity curve
+  and on closed drawdowns.
+
 ## [1.13.0] - 2026-08-21
 
 ### Added
