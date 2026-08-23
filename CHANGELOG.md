@@ -3,6 +3,54 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.15.0] - 2026-08-23
+
+### Added
+- Forward transaction costs (`mdnorm.costs`): `Fees`, `Liquidity`,
+  `ImpactModel`, `CostModel`, `estimate`, `apply_costs`, `cost_report`,
+  `breakeven_participation` and `capacity`. `mdnorm.execution` measures what
+  fills actually cost; this prices a trade a backtest never made.
+- **Zero cost is not a default, it is a claim.** A backtest that charges
+  nothing has asserted that it trades at the midpoint, in unlimited size, for
+  free. This is the crudest way a result flatters you and it survives every
+  other check in the library, because nothing in the data is wrong.
+- **A cost that does not depend on size is not a cost model.** `ImpactModel`
+  charges `coefficient * volatility * participation ** exponent`, the
+  square-root law at the default exponent, so a strategy that only works at
+  size is visibly one. `estimate` warns every time an impact model is absent,
+  and again when participation goes beyond the range such models are usually
+  calibrated over.
+- **No default impact coefficient**, for the same reason there is no default
+  annualisation factor: a plausible wrong constant rescales every cost in the
+  report and changes nothing about its shape. `ImpactModel` requires one.
+- `breakeven_participation` and `capacity` — the fraction of daily volume, and
+  the quantity, at which a stated edge is exactly consumed. `None` when the
+  fixed costs already exceed the edge, which is a different failure from a
+  small capacity and is reported as one.
+- `cost_report` compounds both series and states the share of the gross return
+  that trading took, warning when a strategy is profitable before costs and
+  not after them, and when turnover was zero throughout so the model was never
+  exercised.
+- `apply_costs` charges twice the one-sided turnover produced by
+  `mdnorm.metrics.turnover`, since replacing a book is one sale and one
+  purchase. A `None` in either series propagates rather than becoming a free
+  period.
+- `mdnorm costs` subcommand: price a trade, apply the cost to a return series,
+  and report the size at which the edge runs out.
+
+### Fixed
+- The annualisation arguments could produce a silently halved figure.
+  `--interval 1d --session-length 6h` describes a quarter of a bar per session
+  and yields 63 periods a year rather than 252, which understates every
+  annualised ratio by a factor of two and looks entirely plausible. `mdnorm
+  metrics` and `mdnorm features` now say so when the interval exceeds one
+  session, and the `--session-length` help states that daily bars want it set
+  equal to `--interval`. The calculation was always correct; the guidance
+  around it invited exactly the mistake this library exists to prevent.
+
+### Changed
+- 76 new tests (686 total).
+
 ## [1.14.0] - 2026-08-22
 
 ### Added

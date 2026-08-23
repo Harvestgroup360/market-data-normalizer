@@ -27,6 +27,19 @@ from .align import (
     align_on,
     grid,
 )
+from .costs import (
+    CostBreakdown,
+    CostModel,
+    CostReport,
+    Fees,
+    ImpactModel,
+    Liquidity,
+    apply_costs,
+    breakeven_participation,
+    capacity,
+    cost_report,
+    estimate,
+)
 from .labels import Split, forward_returns, purged_splits, purged_train_test
 from .metrics import (
     Drawdown,
@@ -140,7 +153,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.14.0"
+__version__ = "1.15.0"
 
 __all__ = [
     "MarketEvent",
@@ -201,6 +214,17 @@ __all__ = [
     "trial_variance",
     "deflated_sharpe_ratio",
     "sharpe_report",
+    "Fees",
+    "Liquidity",
+    "ImpactModel",
+    "CostModel",
+    "CostBreakdown",
+    "CostReport",
+    "estimate",
+    "apply_costs",
+    "cost_report",
+    "breakeven_participation",
+    "capacity",
     "Revision",
     "RevisionSeries",
     "RevisionSummary",

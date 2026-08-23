@@ -606,6 +606,56 @@ $ mdnorm metrics pnl.csv --column ret --interval 1d \
     --trials 500 --trial-variance 0.004
 ```
 
+### What the trade costs
+
+`mdnorm.execution` measures what your fills actually cost. This is the other
+question: what a backtest should charge itself for a trade it never made. It
+is the crudest way a result flatters you and it survives every other check,
+because nothing in the data is wrong — the strategy is simply being priced at
+a level nobody trades at.
+
+```python
+from mdnorm import CostModel, Fees, ImpactModel, Liquidity, estimate, capacity
+
+model = CostModel(fees=Fees(taker_bps=D(1)),
+                  impact=ImpactModel(coefficient=D("0.5")))   # no default
+liq = Liquidity(adv=D(1_000_000), volatility=D("0.02"), spread_bps=D(4))
+
+b = estimate(model, notional=D(500_000), quantity=D(20_000), liquidity=liq)
+b.commission_bps   # 1.0
+b.spread_bps       # 2.0   — half of the quoted spread, because you crossed
+b.impact_bps       # 14.1  — 2% of daily volume, square-root law
+b.total_bps        # 17.1
+
+capacity(D(20), model=model, liquidity=liq)   # 28,900 a day at a 20 bps edge
+```
+
+**Zero cost is not a default, it is a claim.** A backtest that charges nothing
+has asserted that it trades at the midpoint, in unlimited size, for free.
+Written down that way nobody would sign it.
+
+**A cost that does not depend on size is not a cost model.** A flat five basis
+points says a strategy can trade a thousand dollars and a billion on identical
+terms, so every capacity question has the same answer. `estimate` says so in
+its warnings every time an impact model is absent.
+
+**There is no default impact coefficient.** The square-root law is well
+supported; the constant in front of it is not universal, and a plausible wrong
+one rescales every cost in the report while changing nothing about its shape.
+Calibrate it against your own fills — that is what `evaluate` is for.
+
+**The useful output is not the cost.** `breakeven_participation` is the
+fraction of daily volume at which the edge is exactly consumed, and `capacity`
+is the same figure as a quantity. A two-basis-point edge that breaks even at
+0.3% of volume is a different object from the same edge breaking even at 30%,
+and no Sharpe ratio distinguishes them.
+
+```console
+$ mdnorm costs pnl.csv --column ret --turnover-column turnover \
+    --cost-bps 5 --edge-bps 20 --adv 1000000 --volatility 0.02 \
+    --spread-bps 4 --fee-bps 1 --impact-coefficient 0.5
+```
+
 ### Data quality
 
 ```python
@@ -702,6 +752,7 @@ $ mdnorm labels feats.csv --column BTC --horizon 5 --splits 5 -o ml.csv
 $ mdnorm universe matrix.csv --listings listings.csv --pct-rank -o pit.csv
 $ mdnorm revisions gdp.csv -o published.csv
 $ mdnorm metrics pnl.csv --column ret --trials 500 --trial-variance 0.004
+$ mdnorm costs pnl.csv --cost-bps 5 --edge-bps 20 --adv 1e6 --volatility 0.02
 ```
 
 Also available as `python -m mdnorm`.
@@ -754,7 +805,8 @@ raw feed ──► normalizer ─────────────► MarketE
                     ├── purged_splits()              folds whose labels do not overlap
                     ├── Universe.members_at()        who was actually listed then
                     ├── RevisionSeries.as_of()       which version you had then
-                    └── sharpe_report()              and how much of it is the search
+                    ├── sharpe_report()              and how much of it is the search
+                    └── capacity()                   the size at which the edge runs out
 ```
 
 ## Tests

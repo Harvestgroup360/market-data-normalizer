@@ -17,6 +17,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm universe matrix.csv --listings listings.csv --pct-rank -o pit.csv
     mdnorm revisions gdp.csv -o published.csv
     mdnorm metrics pnl.csv --column ret --trials 200 --trial-variance 0.02
+    mdnorm costs pnl.csv --cost-bps 5 --edge-bps 20 --adv 1e6 --volatility 0.02
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -37,6 +38,8 @@ from .features import periods_per_year
 from .labels import forward_returns, purged_splits
 from .metrics import (drawdowns, equity_curve, hit_rate, max_drawdown,
                       profit_factor, sharpe_report, sortino_ratio)
+from .costs import (CostModel, Fees, ImpactModel, Liquidity, apply_costs,
+                    breakeven_participation, capacity, cost_report, estimate)
 from .revisions import RevisionSeries, read_revisions_csv
 from .universe import (Universe, cross_section, cross_sectional_rank,
                        cross_sectional_zscore, mask_to_universe,
@@ -425,6 +428,29 @@ def _cmd_align(args: argparse.Namespace) -> int:
     return 0
 
 
+def _periods_per_year(args: argparse.Namespace) -> Optional[Decimal]:
+    """Resolve the annualisation factor, or None, warning about the usual trap.
+
+    An interval longer than one session means fewer than one bar per session,
+    which is almost always a daily series described with an intraday session
+    length. It halves or quarters every annualised figure and looks entirely
+    plausible, so it is called out rather than silently applied.
+    """
+    if not (args.sessions_per_year and args.session_length and args.interval):
+        return None
+    ppy = periods_per_year(
+        args.interval,
+        sessions_per_year=args.sessions_per_year,
+        session_length_ns=args.session_length,
+    )
+    if args.interval > args.session_length:
+        print(f"warning: an interval longer than one session gives fewer than "
+              f"one bar per session ({ppy} periods a year, against "
+              f"{args.sessions_per_year} sessions). For daily bars set "
+              f"--session-length equal to --interval.", file=sys.stderr)
+    return ppy
+
+
 def _cmd_features(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -463,13 +489,7 @@ def _cmd_features(args: argparse.Namespace) -> int:
         if args.zscore:
             out_cols[f"{c}_z{args.zscore}"] = rolling_zscore(data[c], args.zscore)
         if args.vol:
-            ppy = None
-            if args.sessions_per_year and args.session_length and args.interval:
-                ppy = periods_per_year(
-                    args.interval,
-                    sessions_per_year=args.sessions_per_year,
-                    session_length_ns=args.session_length,
-                )
+            ppy = _periods_per_year(args)
             out_cols[f"{c}_vol{args.vol}"] = realized_volatility(
                 r, window=args.vol, periods_per_year=ppy
             )
@@ -734,13 +754,7 @@ def _cmd_metrics(args: argparse.Namespace) -> int:
     else:
         series = raw
 
-    ppy = None
-    if args.sessions_per_year and args.session_length and args.interval:
-        ppy = periods_per_year(
-            args.interval,
-            sessions_per_year=args.sessions_per_year,
-            session_length_ns=args.session_length,
-        )
+    ppy = _periods_per_year(args)
 
     if (args.trials is None) != (args.trial_variance is None):
         print("error: --trials and --trial-variance must be given together. "
@@ -818,6 +832,130 @@ def _cmd_metrics(args: argparse.Namespace) -> int:
             w.writerow(["deflated_sharpe", fmt(rep.deflated)])
             w.writerow(["trials", "n/a" if rep.trials is None else rep.trials])
         print(f"\nwrote {args.output}", file=sys.stderr)
+    return 0
+
+
+def _cmd_costs(args: argparse.Namespace) -> int:
+    import csv as _csv
+
+    fees = Fees(taker_bps=Decimal(args.fee_bps),
+                per_unit=Decimal(args.fee_per_unit),
+                minimum=Decimal(args.fee_minimum))
+    impact = (None if args.impact_coefficient is None
+              else ImpactModel(coefficient=Decimal(args.impact_coefficient),
+                               exponent=Decimal(args.impact_exponent)))
+    model = CostModel(fees=fees, impact=impact,
+                      spread_fraction=Decimal(args.spread_fraction))
+
+    liquidity = None
+    if (args.adv is not None or args.volatility is not None
+            or Decimal(args.spread_bps) != 0):
+        if args.adv is None or args.volatility is None:
+            print("error: --adv and --volatility must be given together to "
+                  "describe liquidity", file=sys.stderr)
+            return 1
+        liquidity = Liquidity(adv=Decimal(args.adv),
+                              volatility=Decimal(args.volatility),
+                              spread_bps=Decimal(args.spread_bps))
+    if impact is not None and liquidity is None:
+        print("error: an impact model needs --adv and --volatility. Without "
+              "them the cost cannot depend on trade size.", file=sys.stderr)
+        return 1
+
+    def fmt(v):
+        if v is None:
+            return "n/a"
+        with localcontext() as ctx:
+            ctx.prec = args.precision
+            return str(+Decimal(v))
+
+    # -- what one trade costs -------------------------------------------------
+    cost_bps = None
+    if args.notional is not None and args.quantity is not None:
+        b = estimate(model, notional=Decimal(args.notional),
+                     quantity=Decimal(args.quantity), liquidity=liquidity)
+        cost_bps = b.total_bps
+        print(f"notional             {fmt(b.notional)}", file=sys.stderr)
+        print(f"participation        {fmt(b.participation)}", file=sys.stderr)
+        print(f"  commission         {fmt(b.commission_bps)} bps", file=sys.stderr)
+        print(f"  spread             {fmt(b.spread_bps)} bps", file=sys.stderr)
+        print(f"  impact             {fmt(b.impact_bps)} bps", file=sys.stderr)
+        print(f"  total              {fmt(b.total_bps)} bps "
+              f"= {fmt(b.total)}", file=sys.stderr)
+        for w in b.warnings:
+            print(f"note: {w}", file=sys.stderr)
+    elif args.cost_bps is not None:
+        cost_bps = Decimal(args.cost_bps)
+    elif args.input:
+        print("error: give either --cost-bps, or --notional with --quantity so "
+              "the cost can be priced from the model", file=sys.stderr)
+        return 1
+
+    # -- what it does to a return series -------------------------------------
+    if args.input:
+        with open_text(args.input) as fh:
+            rows = list(_csv.DictReader(fh))
+        if not rows:
+            print("error: empty input", file=sys.stderr)
+            return 1
+        for col in (args.column, args.turnover_column):
+            if col not in rows[0]:
+                print(f"error: no such column: {col}", file=sys.stderr)
+                return 1
+
+        def series(name):
+            out = []
+            for r in rows:
+                cell = (r.get(name) or "").strip()
+                out.append(Decimal(cell) if cell else None)
+            return out
+
+        gross = series(args.column)
+        turn = series(args.turnover_column)
+        rep = cost_report(gross, turn, cost_bps=cost_bps)
+        print(f"\nperiods              {rep.periods}", file=sys.stderr)
+        print(f"average turnover     {fmt(rep.average_turnover)}", file=sys.stderr)
+        print(f"gross return         {fmt(rep.gross_return)}", file=sys.stderr)
+        print(f"net return           {fmt(rep.net_return)}", file=sys.stderr)
+        print(f"cost                 {fmt(rep.cost)}", file=sys.stderr)
+        print(f"share of gross       {fmt(rep.cost_fraction)}", file=sys.stderr)
+        for w in rep.warnings:
+            print(f"note: {w}", file=sys.stderr)
+
+        if args.output:
+            net = apply_costs(gross, turn, cost_bps=cost_bps)
+            with open_text(args.output, "w") as fh:
+                w = _csv.writer(fh)
+                head = list(rows[0])
+                w.writerow(head + ["net"])
+                for r, n in zip(rows, net):
+                    w.writerow([r[h] for h in head] + ["" if n is None else fmt(n)])
+            print(f"\nwrote {args.output}", file=sys.stderr)
+
+    # -- how big can it get ---------------------------------------------------
+    if args.edge_bps is not None:
+        if liquidity is None:
+            print("error: --edge-bps needs --adv and --volatility",
+                  file=sys.stderr)
+            return 1
+        edge = Decimal(args.edge_bps)
+        p = breakeven_participation(edge, model=model, liquidity=liquidity)
+        cap = capacity(edge, model=model, liquidity=liquidity)
+        print(f"\nedge                 {fmt(edge)} bps", file=sys.stderr)
+        if p is None:
+            fixed = liquidity.spread_bps * model.spread_fraction + fees.taker_bps
+            if impact is None:
+                print("breakeven            n/a — no impact model, so the cost "
+                      "never grows with size and there is nothing to solve for",
+                      file=sys.stderr)
+            else:
+                print(f"breakeven            none — fixed costs of {fmt(fixed)} "
+                      f"bps already exceed the edge, so no trade size works",
+                      file=sys.stderr)
+        else:
+            print(f"breakeven            {fmt(p)} of daily volume",
+                  file=sys.stderr)
+            print(f"capacity             {fmt(cap)} per day", file=sys.stderr)
     return 0
 
 
@@ -985,7 +1123,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_f.add_argument("--session-length", type=parse_interval, default=None,
                      metavar="DURATION",
                      help="length of one session, e.g. 6h for equities, 24h "
-                          "for a continuous venue")
+                          "for a continuous venue. For daily bars set "
+                          "this equal to --interval, not to the hours the "
+                          "venue is open.")
     p_f.set_defaults(func=_cmd_features)
 
     p_l = sub.add_parser("labels",
@@ -1080,8 +1220,56 @@ def build_parser() -> argparse.ArgumentParser:
     p_m.add_argument("--session-length", type=parse_interval, default=None,
                      metavar="DURATION",
                      help="length of one session, e.g. 6h for equities, 24h "
-                          "for a continuous venue")
+                          "for a continuous venue. For daily bars set "
+                          "this equal to --interval, not to the hours the "
+                          "venue is open.")
     p_m.set_defaults(func=_cmd_metrics)
+
+    p_c2 = sub.add_parser("costs",
+                          help="price a trade, apply the cost to a return "
+                               "series, and report the size at which the edge "
+                               "runs out")
+    p_c2.add_argument("input", nargs="?", default=None,
+                      help="CSV of gross returns and turnover (optional)")
+    p_c2.add_argument("--column", default="ret", metavar="NAME",
+                      help="gross return column (default: ret)")
+    p_c2.add_argument("--turnover-column", default="turnover", metavar="NAME",
+                      help="one-sided turnover column (default: turnover)")
+    p_c2.add_argument("-o", "--output", default=None,
+                      help="write the input back with a net return column")
+    p_c2.add_argument("--cost-bps", default=None, metavar="BPS",
+                      help="charge this round-trip cost instead of pricing one")
+    p_c2.add_argument("--notional", default=None, metavar="X",
+                      help="notional of one trade, to price it from the model")
+    p_c2.add_argument("--quantity", default=None, metavar="X",
+                      help="quantity of one trade, in the units --adv uses")
+    p_c2.add_argument("--fee-bps", default="0", metavar="BPS",
+                      help="taker fee in basis points of notional")
+    p_c2.add_argument("--fee-per-unit", default="0", metavar="X",
+                      help="commission per share or contract")
+    p_c2.add_argument("--fee-minimum", default="0", metavar="X",
+                      help="minimum commission per order")
+    p_c2.add_argument("--spread-bps", default="0", metavar="BPS",
+                      help="quoted spread, not half of it")
+    p_c2.add_argument("--spread-fraction", default="0.5", metavar="F",
+                      help="how much of the spread you pay: 0.5 to cross, "
+                           "0 if always passive (default: 0.5)")
+    p_c2.add_argument("--impact-coefficient", default=None, metavar="C",
+                      help="impact constant; there is no default because it "
+                           "is calibrated to your own fills")
+    p_c2.add_argument("--impact-exponent", default="0.5", metavar="E",
+                      help="1/2 for the square-root law (default: 0.5)")
+    p_c2.add_argument("--adv", default=None, metavar="X",
+                      help="average daily volume, same units as --quantity")
+    p_c2.add_argument("--volatility", default=None, metavar="X",
+                      help="daily volatility as a fraction, e.g. 0.02")
+    p_c2.add_argument("--edge-bps", default=None, metavar="BPS",
+                      help="gross round-trip edge, to report breakeven "
+                           "participation and capacity")
+    p_c2.add_argument("--precision", type=int, default=6, metavar="N",
+                      help="significant digits in the output (default: 6)")
+    p_c2.set_defaults(func=_cmd_costs)
+
 
     return parser
 
