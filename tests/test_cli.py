@@ -341,3 +341,135 @@ def test_features_warns_about_the_same_trap(tmp_path, capsys):
                "--session-length", "6h"])
     assert rc == 0
     assert "fewer than one bar per session" in capsys.readouterr().err
+
+
+# -- instruments -------------------------------------------------------------
+
+
+_DAY = 86_400_000_000_000
+_T0 = 1_700_000_000_000_000_000
+
+
+def _day(n):
+    return _T0 + n * _DAY
+
+
+def _map_csv(path, rows=None):
+    rows = rows if rows is not None else [
+        ("ABC", "US0000000001", _day(0), _day(10)),
+        ("ABC", "US0000000002", _day(20), ""),
+    ]
+    with open(path, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["symbol", "instrument_id", "start_ns", "end_ns"])
+        for r in rows:
+            w.writerow(r)
+    return str(path)
+
+
+def _px_csv(path):
+    with open(path, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["ts_ns", "symbol", "px"])
+        for i in (1, 5, 15, 25, 26):
+            w.writerow([_day(i), "ABC", 10 + i])
+    return str(path)
+
+
+def test_instruments_reports_reuse(tmp_path, capsys):
+    m = _map_csv(tmp_path / "map.csv")
+    assert main(["instruments", m]) == 0
+    err = capsys.readouterr().err
+    assert "reused symbols       1" in err
+    assert "US0000000001 -> US0000000002" in err
+
+
+def test_instruments_flags_a_snapshot_file(tmp_path, capsys):
+    m = _map_csv(tmp_path / "map.csv",
+                 [("AAA", "I1", _day(0), ""), ("BBB", "I2", _day(0), "")])
+    assert main(["instruments", m]) == 0
+    err = capsys.readouterr().err
+    assert "cannot express reuse" in err
+    assert "every binding is open-ended" in err
+
+
+def test_instruments_rekeys_and_counts_reassignments(tmp_path, capsys):
+    m = _map_csv(tmp_path / "map.csv")
+    p = _px_csv(tmp_path / "px.csv")
+    assert main(["instruments", m, p]) == 0
+    err = capsys.readouterr().err
+    assert "rows mapped          4" in err
+    assert "rows unmapped        1" in err
+    assert "rows reassigned      2" in err
+    assert "spliced onto the wrong history" in err
+
+
+def test_instruments_writes_the_instrument_id(tmp_path):
+    m = _map_csv(tmp_path / "map.csv")
+    p = _px_csv(tmp_path / "px.csv")
+    out = tmp_path / "keyed.csv"
+    assert main(["instruments", m, p, "-o", str(out)]) == 0
+    rows = list(csv.DictReader(open(out)))
+    assert len(rows) == 4
+    assert {r["instrument_id"] for r in rows} == {"US0000000001", "US0000000002"}
+
+
+def test_instruments_can_keep_unmapped_rows(tmp_path, capsys):
+    m = _map_csv(tmp_path / "map.csv")
+    p = _px_csv(tmp_path / "px.csv")
+    out = tmp_path / "keyed.csv"
+    assert main(["instruments", m, p, "--keep-unmapped", "-o", str(out)]) == 0
+    assert "(kept)" in capsys.readouterr().err
+    assert len(list(csv.DictReader(open(out)))) == 5
+
+
+def test_instruments_segments_one_ticker(tmp_path, capsys):
+    m = _map_csv(tmp_path / "map.csv")
+    p = _px_csv(tmp_path / "px.csv")
+    assert main(["instruments", m, p, "--segments", "ABC"]) == 0
+    err = capsys.readouterr().err
+    assert "ABC: 2 segment(s), 1 unresolved" in err
+    assert "not one instrument" in err
+
+
+def test_instruments_rejects_an_overlapping_map(tmp_path, capsys):
+    m = _map_csv(tmp_path / "map.csv",
+                 [("ABC", "I1", _day(0), _day(10)), ("ABC", "I2", _day(5), "")])
+    assert main(["instruments", m]) == 1
+    assert "two instruments at the same time" in capsys.readouterr().err
+
+
+def test_instruments_rejects_a_map_with_a_hole(tmp_path, capsys):
+    m = _map_csv(tmp_path / "map.csv", [("ABC", "", _day(0), "")])
+    assert main(["instruments", m]) == 1
+    assert "instrument_id" in capsys.readouterr().err
+
+
+def test_instruments_rejects_an_unknown_column(tmp_path, capsys):
+    m = _map_csv(tmp_path / "map.csv")
+    p = _px_csv(tmp_path / "px.csv")
+    assert main(["instruments", m, p, "--symbol-field", "nope"]) == 1
+    assert "no such column" in capsys.readouterr().err
+
+
+def test_instruments_reports_unparseable_timestamps(tmp_path, capsys):
+    m = _map_csv(tmp_path / "map.csv")
+    p = tmp_path / "px.csv"
+    with open(p, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["ts_ns", "symbol"])
+        w.writerow(["not-a-number", "ABC"])
+        w.writerow([_day(1), "ABC"])
+    assert main(["instruments", m, str(p)]) == 0
+    err = capsys.readouterr().err
+    assert "unparseable ts_ns" in err
+    assert "rows mapped          1" in err
+
+
+def test_instruments_says_when_nothing_was_reassigned(tmp_path, capsys):
+    m = _map_csv(tmp_path / "map.csv", [("ABC", "I1", _day(0), "")])
+    p = _px_csv(tmp_path / "px.csv")
+    assert main(["instruments", m, p]) == 0
+    err = capsys.readouterr().err
+    assert "rows reassigned      0" in err
+    assert "no row needed reassigning" in err

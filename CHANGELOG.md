@@ -3,6 +3,46 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.16.0] - 2026-08-24
+
+### Added
+- Point-in-time instrument identity (`mdnorm.instruments`): `SymbolAssignment`,
+  `SymbolMap`, `SymbolMapReport`, `Segment`, `key_by_instrument`,
+  `series_segments` and `read_symbol_map_csv`.
+- **A ticker is not an identifier.** Exchanges reuse ticker strings, and a
+  price history keyed on the string splices two unrelated instruments into one
+  series with no gap, no duplicate and no error. Every price in it genuinely
+  traded; the wrong part is the assumption that the column header names one
+  thing, made once when the matrix is built.
+- Reuse flatters. A delisting is usually a fall and a new listing starts at a
+  normal price, so the splice inserts a jump, and half the time that jump is
+  upward — indistinguishable from a takeover premium in a name the model was
+  holding.
+- `instrument_at` returns `None` in the gap between a delisting and a
+  reassignment rather than the instrument that later took the letters.
+  Substituting the next owner there is the splice itself.
+- Overlapping assignments raise on construction. A ticker bound to two
+  instruments at the same moment is a broken reference file, and resolving it
+  silently is how the error survives into a study.
+- `SymbolMap.report()` counts reused symbols, renamed instruments and
+  open-ended bindings. A file with one open binding per ticker cannot express
+  reuse, so zero reuse over a long history is a statement about the file — the
+  same diagnostic shape as a purge that removes nothing.
+- `key_by_instrument` re-keys rows by the instrument in force at their own
+  timestamp and reports `mapped`, `unmapped` and `reassigned`; `series_segments`
+  splits a ticker's history wherever it changed instrument, so a statistic is
+  never computed across the boundary.
+- `mdnorm instruments` subcommand.
+- 66 new tests (752 total).
+
+### Documentation
+- `ROADMAP.md`: what exists, what has been asked for and what has been decided
+  against. It records the native Rust port requested twice under our LinkedIn
+  post, with the case for it, the reason a second implementation is a second
+  place for the guarantees to drift, and the benchmark we would publish before
+  writing any of it. No dates, and the decided-against list is as long as the
+  proposals.
+
 ## [1.15.0] - 2026-08-23
 
 ### Added

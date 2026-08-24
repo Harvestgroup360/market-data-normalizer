@@ -656,6 +656,58 @@ $ mdnorm costs pnl.csv --column ret --turnover-column turnover \
     --spread-bps 4 --fee-bps 1 --impact-coefficient 0.5
 ```
 
+### A ticker is not an identifier
+
+`canonical_symbol` makes `BTCUSDT` and `XBT/USD` agree on a spelling. This is
+the other problem: the same spelling, at two different times, meaning two
+different things. Exchanges reuse ticker strings — a company delists and its
+symbol is reassigned, a venue renames a pair and the old name reappears
+elsewhere.
+
+```python
+from mdnorm import SymbolAssignment, SymbolMap, key_by_instrument, series_segments
+
+smap = SymbolMap([
+    SymbolAssignment("ABC", "US0000000001", start_ns=t0, end_ns=t1),
+    SymbolAssignment("ABC", "US0000000002", start_ns=t2),   # reused later
+])
+
+smap.reused_symbols()                 # [("ABC", 2)] — the finding
+smap.instrument_at("ABC", t_mid)      # None: in the gap it named nothing
+rows, counts = key_by_instrument(rows, smap)
+counts["reassigned"]                  # rows the string would have mis-joined
+segments, unresolved = series_segments("ABC", timestamps, smap)
+```
+
+**The bias is a join, not a bad value.** Every price in a spliced series
+genuinely traded, at its own timestamp, under the ticker it carries. What is
+wrong is the assumption that the column header names one thing — made once,
+silently, when the matrix is built.
+
+**Reuse looks like a merger, and mergers look profitable.** A delisting is
+usually a fall and a new listing starts at a normal price, so splicing one onto
+the other inserts a jump. Half the time it is upward, and an upward jump in a
+name you were holding is indistinguishable from a takeover premium. The series
+does not look broken; it looks lucky.
+
+**A gap is not filled with the next owner.** Between the delisting and the
+reassignment the ticker named nothing, and `instrument_at` returns `None` there
+rather than the instrument that took the letters afterwards. That substitution
+is the splice.
+
+**Overlaps are refused.** One ticker bound to two instruments at the same
+moment is a broken reference file, and picking one of them quietly is how the
+error reaches a study. `SymbolMap` raises instead.
+
+**No reuse in a long history is a finding, not a pass.** A file with one
+open-ended binding per ticker cannot express reuse at all, so a zero means the
+file rather than the market — the same shape of diagnostic as a purge that
+removes nothing.
+
+```console
+$ mdnorm instruments symbol_map.csv trades.csv --segments ABC -o keyed.csv
+```
+
 ### Data quality
 
 ```python
@@ -753,6 +805,7 @@ $ mdnorm universe matrix.csv --listings listings.csv --pct-rank -o pit.csv
 $ mdnorm revisions gdp.csv -o published.csv
 $ mdnorm metrics pnl.csv --column ret --trials 500 --trial-variance 0.004
 $ mdnorm costs pnl.csv --cost-bps 5 --edge-bps 20 --adv 1e6 --volatility 0.02
+$ mdnorm instruments symbol_map.csv trades.csv -o keyed.csv
 ```
 
 Also available as `python -m mdnorm`.
@@ -771,6 +824,12 @@ class MarketEvent:
     side:  Side | None     # BUY | SELL
     # ... plus bid/ask fields for quotes
 ```
+
+## Roadmap
+
+What exists, what has been asked for, and what we have decided against is in
+[ROADMAP.md](ROADMAP.md) — including the native Rust port two people have now
+asked for, with an honest account of what it would and would not solve.
 
 ## Design notes
 
@@ -794,6 +853,7 @@ raw feed ──► normalizer ─────────────► MarketE
   FIX)        from_fix)                                  execution)
                     │
                     ├── symbols.canonical_symbol()   BTCUSDT → BTC-USDT
+                    ├── SymbolMap.instrument_at()    which instrument the ticker named then
                     ├── timeutil.*_to_ns()           any time → ns UTC
                     ├── adjust.adjust_events()       splits/divs/rolls
                     ├── micro.infer_sides()          who crossed the spread

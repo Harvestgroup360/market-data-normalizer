@@ -18,6 +18,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm revisions gdp.csv -o published.csv
     mdnorm metrics pnl.csv --column ret --trials 200 --trial-variance 0.02
     mdnorm costs pnl.csv --cost-bps 5 --edge-bps 20 --adv 1e6 --volatility 0.02
+    mdnorm instruments symbol_map.csv trades.csv -o keyed.csv
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -40,6 +41,8 @@ from .metrics import (drawdowns, equity_curve, hit_rate, max_drawdown,
                       profit_factor, sharpe_report, sortino_ratio)
 from .costs import (CostModel, Fees, ImpactModel, Liquidity, apply_costs,
                     breakeven_participation, capacity, cost_report, estimate)
+from .instruments import (SymbolMap, key_by_instrument,
+                          read_symbol_map_csv, series_segments)
 from .revisions import RevisionSeries, read_revisions_csv
 from .universe import (Universe, cross_section, cross_sectional_rank,
                        cross_sectional_zscore, mask_to_universe,
@@ -959,6 +962,121 @@ def _cmd_costs(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_instruments(args: argparse.Namespace) -> int:
+    import csv as _csv
+
+    try:
+        assignments = read_symbol_map_csv(args.map)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    try:
+        smap = SymbolMap(assignments)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    rep = smap.report()
+    print(f"assignments          {rep.assignments}", file=sys.stderr)
+    print(f"symbols              {rep.symbols}", file=sys.stderr)
+    print(f"instruments          {rep.instruments}", file=sys.stderr)
+    print(f"reused symbols       {rep.reused_symbols}", file=sys.stderr)
+    print(f"renamed instruments  {rep.renamed_instruments}", file=sys.stderr)
+    print(f"open-ended bindings  {rep.open_ended}", file=sys.stderr)
+
+    reused = smap.reused_symbols()
+    for symbol, n in reused[:args.list_limit]:
+        owners = " -> ".join(a.instrument_id for a in smap.assignments_of(symbol))
+        print(f"  reused: {symbol} names {n} instruments: {owners}",
+              file=sys.stderr)
+    if len(reused) > args.list_limit:
+        print(f"  ... and {len(reused) - args.list_limit} more",
+              file=sys.stderr)
+
+    if not reused:
+        print("note: no ticker in this file ever named more than one "
+              "instrument. Over a long history that is unusual; check that the "
+              "file is point-in-time rather than a snapshot of today, because "
+              "a snapshot cannot express reuse at all.", file=sys.stderr)
+    if rep.open_ended == rep.assignments and rep.assignments:
+        print("note: every binding is open-ended, so nothing in this file has "
+              "an end date. It cannot tell you what a ticker meant in the past.",
+              file=sys.stderr)
+
+    if not args.input:
+        return 0
+
+    with open_text(args.input) as fh:
+        rows = list(_csv.DictReader(fh))
+    if not rows:
+        print("error: empty input", file=sys.stderr)
+        return 1
+    for field in (args.symbol_field, args.ts_field):
+        if field not in rows[0]:
+            print(f"error: no such column: {field}", file=sys.stderr)
+            return 1
+
+    typed = []
+    bad = 0
+    for r in rows:
+        raw = (r.get(args.ts_field) or "").strip()
+        try:
+            ts = int(raw)
+        except ValueError:
+            bad += 1
+            continue
+        d = dict(r)
+        d[args.ts_field] = ts
+        typed.append(d)
+    if bad:
+        print(f"\nnote: {bad} row(s) had an unparseable {args.ts_field} and "
+              f"were dropped before mapping", file=sys.stderr)
+
+    keyed, counts = key_by_instrument(
+        typed, smap,
+        symbol_field=args.symbol_field, ts_field=args.ts_field,
+        drop_unmapped=not args.keep_unmapped,
+    )
+    print(f"\nrows mapped          {counts['mapped']}", file=sys.stderr)
+    print(f"rows unmapped        {counts['unmapped']}"
+          f"{'  (kept)' if args.keep_unmapped else '  (dropped)'}",
+          file=sys.stderr)
+    print(f"rows reassigned      {counts['reassigned']}", file=sys.stderr)
+    if counts["reassigned"]:
+        print("note: those rows carry a ticker that named a different "
+              "instrument at the time than it names now. Keyed on the string, "
+              "they would have been spliced onto the wrong history.",
+              file=sys.stderr)
+    elif counts["mapped"]:
+        print("note: no row needed reassigning. Either no ticker in this data "
+              "was ever reused, or the map cannot express it.", file=sys.stderr)
+
+    if args.segments:
+        stamps = [r[args.ts_field] for r in typed
+                  if r.get(args.symbol_field) == args.segments]
+        stamps.sort()
+        segs, unresolved = series_segments(args.segments, stamps, smap)
+        print(f"\n{args.segments}: {len(segs)} segment(s), "
+              f"{unresolved} unresolved observation(s)", file=sys.stderr)
+        for sg in segs:
+            print(f"  {sg.instrument_id}: rows {sg.start_index}..{sg.stop_index}"
+                  f" ({len(sg)}), {sg.start_ns} to {sg.end_ns}", file=sys.stderr)
+        if len(segs) > 1:
+            print("note: more than one segment means this ticker is not one "
+                  "instrument. Any statistic spanning the boundary mixes two.",
+                  file=sys.stderr)
+
+    if args.output:
+        names = list(keyed[0]) if keyed else []
+        with open_text(args.output, "w") as fh:
+            w = _csv.writer(fh)
+            w.writerow(names)
+            for r in keyed:
+                w.writerow([r.get(n, "") for n in names])
+        print(f"\nwrote {len(keyed)} row(s) to {args.output}", file=sys.stderr)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mdnorm",
@@ -1269,6 +1387,28 @@ def build_parser() -> argparse.ArgumentParser:
     p_c2.add_argument("--precision", type=int, default=6, metavar="N",
                       help="significant digits in the output (default: 6)")
     p_c2.set_defaults(func=_cmd_costs)
+
+    p_i = sub.add_parser("instruments",
+                         help="resolve tickers to instruments as of each "
+                              "timestamp, and report where a ticker was reused")
+    p_i.add_argument("map", help="CSV of symbol,instrument_id,start_ns[,end_ns,venue]")
+    p_i.add_argument("input", nargs="?", default=None,
+                     help="CSV of rows to re-key (optional)")
+    p_i.add_argument("-o", "--output", default=None,
+                     help="write the re-keyed rows to a CSV")
+    p_i.add_argument("--symbol-field", default="symbol", metavar="NAME",
+                     help="ticker column in the input (default: symbol)")
+    p_i.add_argument("--ts-field", default="ts_ns", metavar="NAME",
+                     help="timestamp column in the input (default: ts_ns)")
+    p_i.add_argument("--keep-unmapped", action="store_true",
+                     help="keep rows the map cannot resolve instead of "
+                          "dropping them; they will all share a missing key")
+    p_i.add_argument("--segments", default=None, metavar="SYMBOL",
+                     help="split one ticker's history where it changed instrument")
+    p_i.add_argument("--list-limit", type=int, default=20, metavar="N",
+                     help="how many reused tickers to list (default: 20)")
+    p_i.set_defaults(func=_cmd_instruments)
+
 
 
     return parser

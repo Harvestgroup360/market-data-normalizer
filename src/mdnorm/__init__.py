@@ -40,6 +40,15 @@ from .costs import (
     cost_report,
     estimate,
 )
+from .instruments import (
+    Segment,
+    SymbolAssignment,
+    SymbolMap,
+    SymbolMapReport,
+    key_by_instrument,
+    read_symbol_map_csv,
+    series_segments,
+)
 from .labels import Split, forward_returns, purged_splits, purged_train_test
 from .metrics import (
     Drawdown,
@@ -153,7 +162,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.15.0"
+__version__ = "1.16.0"
 
 __all__ = [
     "MarketEvent",
@@ -225,6 +234,13 @@ __all__ = [
     "cost_report",
     "breakeven_participation",
     "capacity",
+    "SymbolAssignment",
+    "SymbolMap",
+    "SymbolMapReport",
+    "Segment",
+    "key_by_instrument",
+    "series_segments",
+    "read_symbol_map_csv",
     "Revision",
     "RevisionSeries",
     "RevisionSummary",
