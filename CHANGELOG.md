@@ -3,6 +3,49 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.17.0] - 2026-08-25
+
+### Added
+- `bench/benchmark.py` and `BENCHMARKS.md`: throughput for the paths people
+  actually use, measured rather than asserted. Standard library only, warm-up
+  plus best-of-N, machine printed alongside the figures, `--scale` and
+  `--json`. Published because the roadmap promised it before any discussion of
+  a Rust port, so the argument could be about numbers.
+- **The result reorders that discussion.** Exact `Decimal` arithmetic costs
+  **3.1x** a float loop over identical values, not the order of magnitude the
+  folklore suggests. Everything in the library already runs at 34-digit
+  precision, so the gap between this and a fast implementation is mostly
+  Python and the algorithm — and only a small part of it is the exactness we
+  chose deliberately.
+- The benchmark found the hot path in our own code: a rolling z-score at
+  window 60 cost 44x a return on the same series, because the trailing
+  statistics were O(n x window).
+
+### Changed
+- Trailing statistics do less work and produce identical numbers.
+  `_windows` carries the position of the most recent gap instead of rescanning
+  the window at every index, and `rolling_zscore` no longer computes the
+  window mean twice — once directly and once inside `rolling_std`.
+  On 200,000 points at window 60: `rolling_mean` 1.53x, `rolling_zscore`
+  1.29x, `rolling_std` 1.08x.
+- **Every output is identical, including its exponent**, verified against the
+  previous implementation across 144 combinations of length, gap density,
+  window and `ddof`, comparing the string form of every `Decimal` rather than
+  just equality.
+
+### Not changed, deliberately
+- A running sum would make the trailing statistics O(n) and several times
+  faster. `Decimal` addition rounds to the working precision, so a running
+  total carries a different rounding history than a fresh sum over the same
+  window, and the two disagree in the last digits by an amount that depends on
+  how far into the series you are. A library whose central claim is exact,
+  reproducible numbers cannot have a statistic that quietly depends on where
+  the window sits. The 1.08x on `rolling_std` is what that costs.
+
+### Tests
+- 9 new tests (761 total) pinning the boundaries of the carried gap check,
+  where an off-by-one would otherwise hide.
+
 ## [1.16.0] - 2026-08-24
 
 ### Added

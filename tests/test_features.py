@@ -332,3 +332,74 @@ def test_features_line_up_with_the_grid_they_came_from():
     for series in (returns(a), rolling_mean(a, 3), rolling_std(a, 3),
                    rolling_zscore(a, 3), realized_volatility(returns(a), window=3)):
         assert len(series) == len(rows)
+
+
+# -- the carried gap check (1.17.0) ------------------------------------------
+# Deciding whether a window contains a hole used to be a sweep of the window at
+# every index; it is now one comparison against the position of the most recent
+# hole. These pin the boundaries where an off-by-one would hide.
+
+
+def test_a_gap_blocks_exactly_its_own_window():
+    vals = [D(1), D(2), None, D(4), D(5), D(6), D(7)]
+    out = rolling_mean(vals, 3)
+    # indices 2, 3 and 4 have the hole inside their window; 5 is the first clear
+    assert out[:5] == [None, None, None, None, None]
+    assert out[5] is not None and out[6] is not None
+
+
+def test_the_window_clears_the_instant_the_gap_leaves_it():
+    vals = [None] + [D(i) for i in range(1, 8)]
+    out = rolling_mean(vals, 3)
+    assert out[2] is None          # window 0..2 still contains the hole
+    assert out[3] == Decimal(2)    # window 1..3 is clear: (1+2+3)/3
+
+
+def test_two_gaps_are_both_respected():
+    vals = [D(1), None, D(3), D(4), None, D(6), D(7), D(8)]
+    out = rolling_mean(vals, 2)
+    assert out == [None, None, None, Decimal("3.5"), None, None,
+                   Decimal("6.5"), Decimal("7.5")]
+
+
+def test_a_gap_at_the_very_end():
+    vals = [D(1), D(2), D(3), None]
+    assert rolling_mean(vals, 2)[-1] is None
+    assert rolling_std(vals, 2)[-1] is None
+    assert rolling_zscore(vals, 2)[-1] is None
+
+
+def test_a_window_as_long_as_the_series():
+    vals = [D(2), D(4), D(6)]
+    assert rolling_mean(vals, 3) == [None, None, Decimal(4)]
+
+
+def test_a_window_longer_than_the_series_yields_nothing():
+    assert rolling_mean([D(1), D(2)], 5) == [None, None]
+    assert rolling_std([D(1), D(2)], 5) == [None, None]
+
+
+def test_all_three_agree_about_where_a_window_is_valid():
+    vals = [D(1), D(2), None, D(4), D(5), D(6), D(7), D(8)]
+    m = rolling_mean(vals, 3)
+    s = rolling_std(vals, 3)
+    z = rolling_zscore(vals, 3)
+    assert [x is None for x in m] == [x is None for x in s]
+    # the z-score is additionally None wherever the value itself is missing
+    for i, v in enumerate(vals):
+        if v is None:
+            assert z[i] is None
+
+
+def test_zscore_still_rejects_a_bad_ddof():
+    """rolling_zscore validates ddof itself now rather than inheriting the
+    check from rolling_std."""
+    with pytest.raises(ValueError):
+        rolling_zscore([D(1), D(2), D(3)], 3, ddof=3)
+    with pytest.raises(ValueError):
+        rolling_zscore([D(1), D(2), D(3)], 3, ddof=-1)
+
+
+def test_zscore_of_a_frozen_window_is_none_not_zero():
+    vals = [D(5), D(5), D(5), D(5)]
+    assert rolling_zscore(vals, 3) == [None, None, None, None]

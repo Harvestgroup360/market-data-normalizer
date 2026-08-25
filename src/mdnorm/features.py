@@ -67,6 +67,8 @@ _Series = Sequence[Optional[Decimal]]
 #: that rounding never reaches a figure anyone reports.
 _PRECISION = 34
 
+_ZERO = Decimal(0)
+
 
 # -- getting a series out of an aligned matrix -------------------------------
 
@@ -150,13 +152,34 @@ def _windows(values: _Series, window: int):
     ``None`` for an index whose window is incomplete — either because the
     series has not produced ``window`` observations yet, or because one of them
     is missing.
+
+    The gap check is carried rather than rescanned: remembering where the most
+    recent hole was makes it one comparison per index instead of a sweep of the
+    whole window. The values yielded are unchanged, and so is every number
+    computed from them.
     """
+    last_gap = -1
     for i in range(len(values)):
+        if values[i] is None:
+            last_gap = i
         if i + 1 < window:
             yield i, None
             continue
-        chunk = values[i - window + 1: i + 1]
-        yield i, (None if any(v is None for v in chunk) else list(chunk))
+        start = i - window + 1
+        yield i, (None if last_gap >= start else list(values[start:i + 1]))
+
+
+def _mean_and_std(chunk: List[Decimal], window: int, ddof: int):
+    """Both statistics from one pass over the window.
+
+    The mean is computed once and handed to the variance, which is the same
+    two-pass computation as before in the same order — not an incremental
+    update. Running sums would be faster still and would not give the same
+    answer twice in a row, which is a trade this library does not make.
+    """
+    mean = sum(chunk, _ZERO) / window
+    var = sum(((v - mean) ** 2 for v in chunk), _ZERO) / (window - ddof)
+    return mean, var.sqrt()
 
 
 def rolling_mean(values: _Series, window: int) -> List[Optional[Decimal]]:
@@ -167,7 +190,7 @@ def rolling_mean(values: _Series, window: int) -> List[Optional[Decimal]]:
         ctx.prec = _PRECISION
         for _, chunk in _windows(values, window):
             out.append(None if chunk is None
-                       else sum(chunk, Decimal(0)) / window)
+                       else sum(chunk, _ZERO) / window)
     return out
 
 
@@ -188,12 +211,8 @@ def rolling_std(
     with localcontext() as ctx:
         ctx.prec = _PRECISION
         for _, chunk in _windows(values, window):
-            if chunk is None:
-                out.append(None)
-                continue
-            mean = sum(chunk, Decimal(0)) / window
-            var = sum(((v - mean) ** 2 for v in chunk), Decimal(0)) / (window - ddof)
-            out.append(var.sqrt())
+            out.append(None if chunk is None
+                       else _mean_and_std(chunk, window, ddof)[1])
     return out
 
 
@@ -213,17 +232,18 @@ def rolling_zscore(
     that has not expired.
     """
     _check_window(window, minimum=2)
-    means = rolling_mean(values, window)
-    stds = rolling_std(values, window, ddof=ddof)
+    if ddof < 0 or ddof >= window:
+        raise ValueError("ddof must be non-negative and smaller than window")
     out: List[Optional[Decimal]] = []
     with localcontext() as ctx:
         ctx.prec = _PRECISION
-        for i, v in enumerate(values):
-            m, s = means[i], stds[i]
-            if v is None or m is None or s is None or s == 0:
+        for i, chunk in _windows(values, window):
+            v = values[i]
+            if chunk is None or v is None:
                 out.append(None)
-            else:
-                out.append((v - m) / s)
+                continue
+            mean, std = _mean_and_std(chunk, window, ddof)
+            out.append(None if std == 0 else (v - mean) / std)
     return out
 
 

@@ -825,6 +825,18 @@ class MarketEvent:
     # ... plus bid/ask fields for quotes
 ```
 
+## Benchmarks
+
+Throughput for the hot paths, measured by a script in this repository rather
+than asserted: [BENCHMARKS.md](BENCHMARKS.md). The headline finding is that
+exact `Decimal` arithmetic costs 3.1× a float loop, not the order of magnitude
+usually assumed — so the cost of this library is mostly Python and the
+algorithm, not the exactness.
+
+```console
+$ python bench/benchmark.py
+```
+
 ## Roadmap
 
 What exists, what has been asked for, and what we have decided against is in

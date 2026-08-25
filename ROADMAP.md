@@ -11,9 +11,9 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Twenty-seven tagged releases, fourteen of them published to PyPI (the
+Twenty-eight tagged releases, fourteen of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 752 tests.
+dependencies, Python 3.10+, 761 tests.
 
 | Layer | Modules |
 | --- | --- |
@@ -25,6 +25,7 @@ dependencies, Python 3.10+, 752 tests.
 | Execution | `execution` |
 | Research | `align`, `features`, `labels`, `revisions` |
 | Evaluation | `metrics`, `costs` |
+| Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
 ## Asked for
 
@@ -52,21 +53,23 @@ disagrees with the slow one about where a fold boundary falls is worse than no
 fast library at all. If we do this, the two have to be tested against each
 other on the same inputs, and that harness is most of the work.
 
-What we would do first, before writing any Rust: publish a benchmark of the
-paths people actually want ported, so the discussion is about measured numbers
-rather than about the general reputation of two languages. If it turns out the
-bottleneck is `Decimal` rather than Python, that is a different and much
-smaller change.
+We said we would publish a benchmark before writing any Rust, and
+[BENCHMARKS.md](BENCHMARKS.md) is it. The result changed our view of this
+item. Exact decimal arithmetic costs **3.1×** a float loop over the same
+values — not the order of magnitude the folklore suggests — so `Decimal` is
+not where the time goes. The trailing statistics were, at O(n × window), and
+1.17.0 addressed part of that in Python without altering a single output.
+
+That does not close the question; an interpreter is still an interpreter. It
+does mean the honest ordering is algorithm first, language second, and that a
+port would be buying back interpreter overhead rather than the cost of being
+exact.
 
 No commitment, and no date. If you have a concrete latency budget and a path
 you need inside it, open an issue with the numbers — that is more useful to us
 than a vote.
 
 ## Under consideration
-
-**Benchmarks as a published artifact.** Timings for the hot paths, produced by
-a script in the repository, so the figures can be reproduced and challenged
-rather than quoted. Prerequisite for the item above.
 
 **Mixed-frequency alignment.** Joining a daily series onto an intraday grid
 correctly is the same as-of problem as everything in `align`, with one extra
