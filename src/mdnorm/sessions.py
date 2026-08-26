@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
-from typing import FrozenSet, Iterable, List, Sequence, Union
+from typing import FrozenSet, Iterable, List, Sequence, Tuple, Union
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .bars import Bar
@@ -126,6 +126,40 @@ def session_date(ts_ns: int, session: Session) -> date:
     if session.is_overnight and local.timetz().replace(tzinfo=None) < session.end:
         return local.date() - timedelta(days=1)
     return local.date()
+
+
+def session_bounds(day: date, session: Session) -> Tuple[int, int]:
+    """The UTC nanosecond span of the session that *opens* on ``day``.
+
+    Returns ``(open_ns, close_ns)``, half-open like every other interval in
+    this library. For an overnight session the close falls on the following
+    local date; for a 24-hour session it is exactly one local day later, which
+    is not always twenty-four hours — daylight-saving days are 23 or 25 hours
+    long and the arithmetic here follows the calendar rather than a constant.
+
+    ``day`` is not checked against ``session.days``: a caller asking for the
+    bounds of a Sunday has a reason, and silently returning something else
+    would be worse than answering the question asked.
+
+    On the two hours a year that a local clock repeats or skips, the earlier
+    of an ambiguous pair is used and a skipped time resolves forward, which is
+    :mod:`zoneinfo`'s default. Sessions that open inside a transition are rare
+    and worth knowing about rather than guessing at.
+    """
+    zone = session.zone
+    open_local = datetime.combine(day, session.start).replace(tzinfo=zone)
+    if session.start == session.end:
+        close_day = day + timedelta(days=1)
+    elif session.is_overnight:
+        close_day = day + timedelta(days=1)
+    else:
+        close_day = day
+    close_local = datetime.combine(close_day, session.end).replace(tzinfo=zone)
+    open_ns = int(open_local.timestamp()) * _NS_PER_S
+    close_ns = int(close_local.timestamp()) * _NS_PER_S
+    if close_ns <= open_ns:  # pragma: no cover - guarded by Session validation
+        raise ValueError("session close must follow its open")
+    return open_ns, close_ns
 
 
 def filter_session(

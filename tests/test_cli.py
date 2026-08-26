@@ -473,3 +473,62 @@ def test_instruments_says_when_nothing_was_reassigned(tmp_path, capsys):
     err = capsys.readouterr().err
     assert "rows reassigned      0" in err
     assert "no row needed reassigning" in err
+
+
+# -- mixfreq ----------------------------------------------------------------
+
+
+def _periods_csv(path):
+    with open(path, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["start", "end", "value"])
+        w.writerow([0, 86_400_000_000_000, "1.5"])
+        w.writerow([86_400_000_000_000, 172_800_000_000_000, "2.5"])
+    return str(path)
+
+
+def test_mixfreq_reports_the_leak(tmp_path, capsys):
+    p = _periods_csv(tmp_path / "periods.csv")
+    assert main(["mixfreq", p, "--interval", str(21_600_000_000_000)]) == 0
+    err = capsys.readouterr().err
+    assert "periods              2" in err
+    assert "of those, too early" in err
+    assert "every grid point leaks" in err
+
+
+def test_mixfreq_warns_that_zero_lag_is_a_claim(tmp_path, capsys):
+    p = _periods_csv(tmp_path / "periods.csv")
+    assert main(["mixfreq", p, "--interval", str(86_400_000_000_000)]) == 0
+    assert "publication lag is zero" in capsys.readouterr().err
+
+
+def test_mixfreq_lag_is_not_warned_about_when_stated(tmp_path, capsys):
+    p = _periods_csv(tmp_path / "periods.csv")
+    assert main(["mixfreq", p, "--interval", str(86_400_000_000_000),
+                 "--lag", str(3_600_000_000_000)]) == 0
+    assert "publication lag is zero" not in capsys.readouterr().err
+
+
+def test_mixfreq_writes_both_joins_side_by_side(tmp_path, capsys):
+    p = _periods_csv(tmp_path / "periods.csv")
+    out = tmp_path / "joined.csv"
+    assert main(["mixfreq", p, "--interval", str(43_200_000_000_000),
+                 "-o", str(out)]) == 0
+    rows = list(csv.DictReader(open(out)))
+    assert rows[0]["label"] == "1.5"
+    assert rows[0]["knowable"] == ""        # the point of the whole module
+    assert any(r["knowable"] for r in rows)
+
+
+def test_mixfreq_rejects_an_empty_file(tmp_path, capsys):
+    p = tmp_path / "empty.csv"
+    p.write_text("start,end,value\n")
+    assert main(["mixfreq", str(p), "--interval", "1"]) == 1
+    assert "no periods" in capsys.readouterr().err
+
+
+def test_mixfreq_reports_a_missing_column(tmp_path, capsys):
+    p = tmp_path / "bad.csv"
+    p.write_text("start,value\n0,1.5\n")
+    assert main(["mixfreq", str(p), "--interval", "1"]) == 1
+    assert "error:" in capsys.readouterr().err

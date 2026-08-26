@@ -558,6 +558,47 @@ answers.
 $ mdnorm revisions gdp.csv -o published.csv
 ```
 
+### A daily number on an intraday grid
+
+A daily close, a settlement price, an overnight risk figure — slow series meet
+fast grids constantly, and they almost always arrive labelled with the period
+they *describe* rather than the moment they became *knowable*.
+
+```python
+from mdnorm import PeriodSeries, leak_report, US_EQUITY_RTH, grid
+
+series = PeriodSeries.from_sessions(daily_closes, US_EQUITY_RTH)
+feature = series.knowable_series()        # keyed at the close — safe to join
+report  = leak_report(series, grid(...))  # what the label join would have cost
+```
+
+**A daily bar labelled Tuesday is not knowable on Tuesday morning.** It is
+knowable once Tuesday's session closes — Tuesday evening, and later still if
+the number has to be published. Join it by its label and every minute of
+Tuesday sees a value that summarises, among other things, the rest of Tuesday.
+
+**The session decides the close, not the file.** Daily bars are frequently
+stamped midnight to midnight regardless of when the market was open.
+`from_sessions` and `from_daily_bars` take a `Session`, so a 16:00 New York
+close is 21:00 UTC in January and 20:00 in July without the caller thinking
+about it.
+
+**Publication lag is a separate claim.** A settlement price exists at the
+close; it reaches you when the vendor sends it. `publication_lag_ns` is where
+that goes and it defaults to zero, because a lag of zero is a statement about
+your feed that only you can make.
+
+**Measure the leak instead of arguing about it.** `leak_report` counts the grid
+points where the label join shows a value that did not yet exist, and how far
+ahead the worst one was read. On back-to-back periods the answer is *every
+point*: the moment one value becomes readable the label has already moved to
+the next. Whether that ruins a study depends on the signal, which is exactly
+why the number is worth having.
+
+```console
+$ mdnorm mixfreq daily.csv --interval 60000000000 --lag 900000000000 -o joined.csv
+```
+
 ### How much of the result is the search
 
 Everything above is about getting the data right. The last step is a correct

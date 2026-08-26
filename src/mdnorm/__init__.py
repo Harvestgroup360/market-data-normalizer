@@ -50,6 +50,13 @@ from .instruments import (
     series_segments,
 )
 from .labels import Split, forward_returns, purged_splits, purged_train_test
+from .mixfreq import (
+    LeakReport,
+    Period,
+    PeriodSeries,
+    leak_report,
+    read_periods_csv,
+)
 from .metrics import (
     Drawdown,
     Moments,
@@ -156,13 +163,14 @@ from .sessions import (
     group_by_session_date,
     in_session,
     parse_session,
+    session_bounds,
     session_date,
 )
 from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.17.0"
+__version__ = "1.18.0"
 
 __all__ = [
     "MarketEvent",
@@ -241,6 +249,11 @@ __all__ = [
     "key_by_instrument",
     "series_segments",
     "read_symbol_map_csv",
+    "Period",
+    "PeriodSeries",
+    "LeakReport",
+    "leak_report",
+    "read_periods_csv",
     "Revision",
     "RevisionSeries",
     "RevisionSummary",
@@ -294,6 +307,7 @@ __all__ = [
     "filter_session",
     "session_date",
     "group_by_session_date",
+    "session_bounds",
     "parse_session",
     "WEEKDAYS",
     "US_EQUITY_RTH",

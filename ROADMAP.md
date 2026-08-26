@@ -11,9 +11,9 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Twenty-eight tagged releases, fourteen of them published to PyPI (the
+Twenty-nine tagged releases, sixteen of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 761 tests.
+dependencies, Python 3.10+, 795 tests.
 
 | Layer | Modules |
 | --- | --- |
@@ -23,9 +23,16 @@ dependencies, Python 3.10+, 761 tests.
 | Aggregation | `bars`, `sessions`, `adjust` |
 | Microstructure | `book`, `consolidate`, `micro` |
 | Execution | `execution` |
-| Research | `align`, `features`, `labels`, `revisions` |
+| Research | `align`, `features`, `labels`, `revisions`, `mixfreq` |
 | Evaluation | `metrics`, `costs` |
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
+
+Shipped since the last revision of this file: `mixfreq`, which was the
+first item under *Under consideration* below. A slow series now carries the
+moment each value became knowable rather than the period it describes, and
+`leak_report` counts the grid points a label-keyed join would have answered
+too early. The result on back-to-back periods is worth stating plainly: the
+naive join is wrong at every point, not most of them.
 
 ## Asked for
 
@@ -70,11 +77,6 @@ you need inside it, open an issue with the numbers — that is more useful to us
 than a vote.
 
 ## Under consideration
-
-**Mixed-frequency alignment.** Joining a daily series onto an intraday grid
-correctly is the same as-of problem as everything in `align`, with one extra
-trap: the daily bar is not knowable until its session closes, and its label
-usually says otherwise.
 
 **Point-in-time index membership from vendor files.** `universe` applies a
 membership record; producing one from the files vendors actually ship, with

@@ -34,7 +34,7 @@ from typing import List, Optional
 
 from . import __version__
 from .adjust import AdjustMethod, adjust_events, read_actions_csv
-from .align import Field, align
+from .align import Field, align, grid
 from .features import periods_per_year
 from .labels import forward_returns, purged_splits
 from .metrics import (drawdowns, equity_curve, hit_rate, max_drawdown,
@@ -43,6 +43,7 @@ from .costs import (CostModel, Fees, ImpactModel, Liquidity, apply_costs,
                     breakeven_participation, capacity, cost_report, estimate)
 from .instruments import (SymbolMap, key_by_instrument,
                           read_symbol_map_csv, series_segments)
+from .mixfreq import leak_report, read_periods_csv
 from .revisions import RevisionSeries, read_revisions_csv
 from .universe import (Universe, cross_section, cross_sectional_rank,
                        cross_sectional_zscore, mask_to_universe,
@@ -962,6 +963,70 @@ def _cmd_costs(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_mixfreq(args: argparse.Namespace) -> int:
+    import csv as _csv
+
+    try:
+        series = read_periods_csv(
+            args.periods,
+            start_column=args.start_field,
+            end_column=args.end_field,
+            value_column=args.value_field,
+            publication_lag_ns=args.lag,
+            name=args.name,
+        )
+    except (KeyError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if len(series) == 0:
+        print("error: no periods in input", file=sys.stderr)
+        return 1
+
+    periods = series.periods
+    first, last = periods[0].start_ns, periods[-1].end_ns
+    points = grid(first, last, args.interval)
+    rep = leak_report(series, points)
+
+    print(f"periods              {len(series)}", file=sys.stderr)
+    print(f"grid points          {rep.grid_points}", file=sys.stderr)
+    print(f"knowable             {rep.knowable_points}", file=sys.stderr)
+    print(f"label join answers   {rep.label_points}", file=sys.stderr)
+    print(f"of those, too early  {rep.leaking_points}", file=sys.stderr)
+    if rep.max_lead_ns is not None:
+        print(f"worst read-ahead     {rep.max_lead_ns / 1e9:,.0f}s",
+              file=sys.stderr)
+    if rep.leaking_fraction is not None:
+        pct = rep.leaking_fraction * 100
+        print(f"share leaking        {pct:.1f}%", file=sys.stderr)
+
+    if rep.leaking_points == rep.grid_points and rep.grid_points:
+        print("note: every grid point leaks. That is what back-to-back "
+              "periods do to a label join — the moment one value becomes "
+              "readable the label has already moved to the next one.",
+              file=sys.stderr)
+    if args.lag == 0:
+        print("note: publication lag is zero, which claims each value is "
+              "readable the instant its period ends. If a vendor sends it "
+              "later, pass --lag; the figures above are optimistic by "
+              "exactly that much.", file=sys.stderr)
+
+    if not args.output:
+        return 0
+
+    with open(args.output, "w", newline="", encoding="utf-8") as fh:
+        w = _csv.writer(fh)
+        w.writerow(["ts_ns", "knowable", "label"])
+        knowable = series.knowable_series()
+        labelled = series.labelled_series()
+        for t in points:
+            k = knowable.at(t)[0]
+            l = labelled.at(t)[0]
+            w.writerow([t, "" if k is None else str(k),
+                        "" if l is None else str(l)])
+    print(f"wrote {args.output}", file=sys.stderr)
+    return 0
+
+
 def _cmd_instruments(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -1387,6 +1452,26 @@ def build_parser() -> argparse.ArgumentParser:
     p_c2.add_argument("--precision", type=int, default=6, metavar="N",
                       help="significant digits in the output (default: 6)")
     p_c2.set_defaults(func=_cmd_costs)
+
+    p_x = sub.add_parser("mixfreq",
+                         help="join a slow series onto a fast grid by when "
+                              "each value became knowable, and measure what "
+                              "joining on its label would have leaked")
+    p_x.add_argument("periods", help="CSV of start,end,value")
+    p_x.add_argument("--interval", type=int, required=True, metavar="NS",
+                     help="grid spacing in nanoseconds")
+    p_x.add_argument("--lag", type=int, default=0, metavar="NS",
+                     help="publication lag after each period ends "
+                          "(default: 0, which claims instant delivery)")
+    p_x.add_argument("-o", "--output", default=None,
+                     help="write both joins side by side to a CSV")
+    p_x.add_argument("--start-field", default="start", metavar="NAME")
+    p_x.add_argument("--end-field", default="end", metavar="NAME")
+    p_x.add_argument("--value-field", default="value", metavar="NAME")
+    p_x.add_argument("--name", default="value", metavar="NAME",
+                     help="column name for the series (default: value)")
+    p_x.set_defaults(func=_cmd_mixfreq)
+
 
     p_i = sub.add_parser("instruments",
                          help="resolve tickers to instruments as of each "
