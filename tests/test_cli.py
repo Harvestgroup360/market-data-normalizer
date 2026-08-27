@@ -597,3 +597,80 @@ def test_membership_rejects_an_empty_file(tmp_path, capsys):
     p.write_text("instrument_id,action,effective\n")
     assert main(["membership", str(p)]) == 1
     assert "no changes" in capsys.readouterr().err
+
+
+# -- reconcile --------------------------------------------------------------
+
+
+def _series_csv(path, rows):
+    with open(path, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["ts_ns", "value"])
+        for r in rows:
+            w.writerow(r)
+    return str(path)
+
+
+def test_reconcile_separates_coverage_from_content(tmp_path, capsys):
+    a = _series_csv(tmp_path / "a.csv", [(0, "100"), (1, "101"), (2, "102")])
+    b = _series_csv(tmp_path / "b.csv", [(0, "100"), (1, "999")])
+    assert main(["reconcile", a, b]) == 0
+    err = capsys.readouterr().err
+    assert "shared timestamps    2" in err
+    assert "  agreed             1" in err
+    assert "  differed           1" in err
+    assert "only in left         1" in err
+
+
+def test_reconcile_warns_that_no_tolerance_means_exact(tmp_path, capsys):
+    a = _series_csv(tmp_path / "a.csv", [(0, "100")])
+    b = _series_csv(tmp_path / "b.csv", [(0, "100")])
+    assert main(["reconcile", a, b]) == 0
+    assert "no tolerance given" in capsys.readouterr().err
+
+
+def test_reconcile_tolerance_admits_a_small_difference(tmp_path, capsys):
+    a = _series_csv(tmp_path / "a.csv", [(0, "100.00")])
+    b = _series_csv(tmp_path / "b.csv", [(0, "100.01")])
+    assert main(["reconcile", a, b, "--relative", "0.001"]) == 0
+    err = capsys.readouterr().err
+    assert "agreement            100.00%" in err
+    assert "no tolerance given" not in err
+
+
+def test_reconcile_diagnoses_a_clock_offset(tmp_path, capsys):
+    a = _series_csv(tmp_path / "a.csv", [(i * 10**9, "100") for i in range(5)])
+    b = _series_csv(tmp_path / "b.csv",
+                    [(i * 10**9 + 250 * 10**6, "100") for i in range(5)])
+    assert main(["reconcile", a, b]) == 0
+    err = capsys.readouterr().err
+    assert "shared timestamps    0" in err
+    assert "clock difference, not a disagreement" in err
+
+
+def test_reconcile_applies_a_stated_shift(tmp_path, capsys):
+    a = _series_csv(tmp_path / "a.csv", [(i * 10**9, "100") for i in range(5)])
+    b = _series_csv(tmp_path / "b.csv",
+                    [(i * 10**9 + 250 * 10**6, "100") for i in range(5)])
+    assert main(["reconcile", a, b, "--shift", str(-250 * 10**6)]) == 0
+    assert "agreement            100.00%" in capsys.readouterr().err
+
+
+def test_reconcile_writes_the_mismatches(tmp_path):
+    a = _series_csv(tmp_path / "a.csv", [(0, "100"), (1, "101")])
+    b = _series_csv(tmp_path / "b.csv", [(0, "105")])
+    out = tmp_path / "mm.csv"
+    assert main(["reconcile", a, b, "-o", str(out)]) == 0
+    rows = list(csv.DictReader(open(out)))
+    kinds = {r["kind"] for r in rows}
+    assert kinds == {"value", "only_left"}
+    value_row = next(r for r in rows if r["kind"] == "value")
+    assert value_row["difference"] == "5"
+
+
+def test_reconcile_rejects_an_empty_input(tmp_path, capsys):
+    a = _series_csv(tmp_path / "a.csv", [(0, "100")])
+    b = tmp_path / "b.csv"
+    b.write_text("ts_ns,value\n")
+    assert main(["reconcile", a, str(b)]) == 1
+    assert "must contain observations" in capsys.readouterr().err

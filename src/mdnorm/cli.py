@@ -34,7 +34,7 @@ from typing import List, Optional
 
 from . import __version__
 from .adjust import AdjustMethod, adjust_events, read_actions_csv
-from .align import Field, align, grid
+from .align import AsOfSeries, Field, align, grid
 from .features import periods_per_year
 from .labels import forward_returns, purged_splits
 from .metrics import (drawdowns, equity_curve, hit_rate, max_drawdown,
@@ -44,6 +44,7 @@ from .costs import (CostModel, Fees, ImpactModel, Liquidity, apply_costs,
 from .instruments import (SymbolMap, key_by_instrument,
                           read_symbol_map_csv, series_segments)
 from .membership import Basis, read_index_changes_csv, survivorship_gap
+from .reconcile import reconcile, suggest_shift
 from .mixfreq import leak_report, read_periods_csv
 from .revisions import RevisionSeries, read_revisions_csv
 from .universe import (Universe, cross_section, cross_sectional_rank,
@@ -1096,6 +1097,78 @@ def _cmd_membership(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_reconcile(args: argparse.Namespace) -> int:
+    import csv as _csv
+
+    def load(path: str) -> AsOfSeries:
+        rows = []
+        with open_text(path) as fh:
+            for row in _csv.DictReader(fh):
+                rows.append((int(row[args.ts_field]),
+                             Decimal(row[args.value_field].strip())))
+        return AsOfSeries(rows)
+
+    try:
+        left, right = load(args.left), load(args.right)
+    except (KeyError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if len(left) == 0 or len(right) == 0:
+        print("error: both inputs must contain observations", file=sys.stderr)
+        return 1
+
+    abs_tol = Decimal(args.absolute) if args.absolute is not None else None
+    rel_tol = Decimal(args.relative) if args.relative is not None else None
+    rep, mismatches = reconcile(left, right, absolute_tolerance=abs_tol,
+                                relative_tolerance=rel_tol,
+                                shift_right_ns=args.shift,
+                                limit=args.list_limit)
+
+    print(f"left observations    {rep.left_points}", file=sys.stderr)
+    print(f"right observations   {rep.right_points}", file=sys.stderr)
+    print(f"shared timestamps    {rep.common_timestamps}", file=sys.stderr)
+    print(f"  agreed             {rep.agreed}", file=sys.stderr)
+    print(f"  differed           {rep.value_mismatches}", file=sys.stderr)
+    print(f"only in left         {rep.only_left}", file=sys.stderr)
+    print(f"only in right        {rep.only_right}", file=sys.stderr)
+    if rep.agreement is not None:
+        print(f"agreement            {rep.agreement * 100:.2f}%", file=sys.stderr)
+    if rep.max_absolute_difference is not None:
+        print(f"worst difference     {rep.max_absolute_difference}",
+              file=sys.stderr)
+
+    if rep.common_timestamps == 0:
+        s = suggest_shift(left, right, max_shift_ns=args.max_shift)
+        if s is not None and s.explains is not None:
+            print(f"note: nothing lines up, but shifting the right source by "
+                  f"{s.shift_ns} ns would align {s.explains * 100:.0f}% of the "
+                  f"sample. That is a clock difference, not a disagreement — "
+                  f"confirm it and pass --shift.", file=sys.stderr)
+        else:
+            print("note: the two sources share no timestamps at all and no "
+                  "constant offset explains it. Check that they describe the "
+                  "same instrument and the same timestamp convention.",
+                  file=sys.stderr)
+    if args.absolute is None and args.relative is None:
+        print("note: no tolerance given, so values had to match exactly. Two "
+              "feeds differ in the last digits for reasons that are not "
+              "errors; pass --absolute or --relative to say how much you "
+              "accept.", file=sys.stderr)
+
+    if not args.output:
+        return 0
+    with open(args.output, "w", newline="", encoding="utf-8") as fh:
+        w = _csv.writer(fh)
+        w.writerow(["ts_ns", "kind", "left", "right", "difference"])
+        for m in mismatches:
+            w.writerow([m.ts_ns, m.kind.value,
+                        "" if m.left is None else str(m.left),
+                        "" if m.right is None else str(m.right),
+                        "" if m.difference is None else str(m.difference)])
+    print(f"wrote {args.output}", file=sys.stderr)
+    return 0
+
+
 def _cmd_instruments(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -1561,6 +1634,33 @@ def build_parser() -> argparse.ArgumentParser:
     p_mb.add_argument("--announced-field", default="announced", metavar="NAME")
     p_mb.add_argument("--name", default="", metavar="NAME")
     p_mb.set_defaults(func=_cmd_membership)
+
+
+    p_rc = sub.add_parser("reconcile",
+                          help="compare two sources of the same series and "
+                               "report where they disagree, keeping coverage "
+                               "gaps apart from value differences")
+    p_rc.add_argument("left", help="CSV of ts_ns,value")
+    p_rc.add_argument("right", help="CSV of ts_ns,value")
+    p_rc.add_argument("--absolute", default=None, metavar="X",
+                      help="accept differences up to this absolute size")
+    p_rc.add_argument("--relative", default=None, metavar="X",
+                      help="accept differences up to this fraction of the left "
+                           "value, e.g. 0.0001 for one basis point")
+    p_rc.add_argument("--shift", type=int, default=0, metavar="NS",
+                      help="move the right source forward by this many "
+                           "nanoseconds before comparing")
+    p_rc.add_argument("--max-shift", type=int, default=1_000_000_000,
+                      metavar="NS",
+                      help="how far to look for a clock offset when nothing "
+                           "lines up (default: one second)")
+    p_rc.add_argument("-o", "--output", default=None,
+                      help="write the mismatches to a CSV")
+    p_rc.add_argument("--list-limit", type=int, default=1000, metavar="N",
+                      help="cap the mismatches written (default: 1000)")
+    p_rc.add_argument("--ts-field", default="ts_ns", metavar="NAME")
+    p_rc.add_argument("--value-field", default="value", metavar="NAME")
+    p_rc.set_defaults(func=_cmd_reconcile)
 
 
     p_i = sub.add_parser("instruments",

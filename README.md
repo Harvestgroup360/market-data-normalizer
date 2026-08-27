@@ -520,6 +520,45 @@ $ mdnorm universe matrix.csv --listings listings.csv --pct-rank -o pit.csv
 $ mdnorm revisions gdp.csv -o published.csv
 ```
 
+### Two feeds that disagree
+
+`quality` inspects one feed and reports what looks wrong inside it. A second
+feed asks the question desks actually use to decide whether a vendor can be
+trusted.
+
+```python
+from mdnorm import reconcile, suggest_shift
+
+report, mismatches = reconcile(primary, secondary,
+                               relative_tolerance=D("0.0001"))
+report.agreement            # of the shared timestamps, how many matched
+report.coverage_difference  # timestamps only one of them had
+```
+
+**The two kinds of disagreement are not one number.** A timestamp one feed has
+and the other does not is a coverage difference — a dropped message, a
+filtered print, a venue one side does not carry. A timestamp both have with
+different values is a content difference, and at least one of them is wrong
+about something checkable. `agreement` is computed over shared timestamps
+only, so a feed that simply carries less does not look like a feed that lies.
+
+**There is no default tolerance.** Two feeds of the same instrument differ in
+the last digits for reasons that are not errors, and a constant deciding how
+much is acceptable is a judgement about your data rather than a property of
+it. With none given, values must match exactly — the strictest reading, and
+one that states its own assumption.
+
+**Zero overlap almost never means total disagreement.** It usually means a
+clock offset: one feed stamps at the venue, the other on receipt, exact
+matching finds nothing in common, and the naive conclusion is that the feeds
+are unrelated. `suggest_shift` looks for the constant offset that lines them
+up and reports how much of the sample it would explain. It does not apply it —
+a clock difference is a fact about two systems that somebody should confirm.
+
+```console
+$ mdnorm reconcile primary.csv vendor.csv --relative 0.0001 -o breaks.csv
+```
+
 ### Who was in the index, and when they were told
 
 `universe` applies a membership record. Producing one from the files a vendor

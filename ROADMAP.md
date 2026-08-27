@@ -11,15 +11,15 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Thirty tagged releases, seventeen of them published to PyPI (the
+Thirty-one tagged releases, eighteen of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 827 tests.
+dependencies, Python 3.10+, 857 tests.
 
 | Layer | Modules |
 | --- | --- |
 | Ingest | `normalizers`, `csvio`, `jsonl`, `streams`, `records`, `symbols` |
 | Instrument identity | `instruments`, `universe`, `membership` |
-| Cleaning | `quality` |
+| Cleaning | `quality`, `reconcile` |
 | Aggregation | `bars`, `sessions`, `adjust` |
 | Microstructure | `book`, `consolidate`, `micro` |
 | Execution | `execution` |
@@ -27,8 +27,11 @@ dependencies, Python 3.10+, 827 tests.
 | Evaluation | `metrics`, `costs` |
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
-Shipped since the last revision of this file: `mixfreq` and `membership`,
-the first two items that stood under *Under consideration* below. A slow series now carries the
+Shipped since the last revision of this file: `mixfreq`, `membership` and
+`reconcile`. The first two were the items that stood under *Under
+consideration* below; the third was not on the list, and is here because
+comparing two sources of the same series is the check people run before
+trusting either, and nothing in the library did it. A slow series now carries the
 moment each value became knowable rather than the period it describes, and
 `leak_report` counts the grid points a label-keyed join would have answered
 too early. The result on back-to-back periods is worth stating plainly: the
@@ -36,7 +39,10 @@ naive join is wrong at every point, not most of them. `membership` builds an
 index history out of the add/delete files and periodic snapshots vendors
 actually ship, keeps the announcement and effective dates apart because they
 answer different questions, refuses to pick a date inside a window a snapshot
-only bounds, and measures the survivorship gap in both directions.
+only bounds, and measures the survivorship gap in both directions. `reconcile` compares
+two feeds of the same series, keeps coverage gaps apart from value
+differences instead of averaging them into one match rate, and diagnoses the
+common case where zero overlap is a clock offset rather than a disagreement.
 
 ## Asked for
 

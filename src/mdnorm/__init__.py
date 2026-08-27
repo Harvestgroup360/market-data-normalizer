@@ -90,6 +90,15 @@ from .metrics import (
     trial_variance,
     turnover,
 )
+from .reconcile import (
+    Mismatch,
+    MismatchKind,
+    ReconcileReport,
+    ShiftSuggestion,
+    reconcile,
+    reconcile_bars,
+    suggest_shift,
+)
 from .revisions import (
     Revision,
     RevisionSeries,
@@ -181,7 +190,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.19.0"
+__version__ = "1.20.0"
 
 __all__ = [
     "MarketEvent",
@@ -274,6 +283,13 @@ __all__ = [
     "MembershipReport",
     "survivorship_gap",
     "read_index_changes_csv",
+    "MismatchKind",
+    "Mismatch",
+    "ReconcileReport",
+    "ShiftSuggestion",
+    "reconcile",
+    "reconcile_bars",
+    "suggest_shift",
     "Revision",
     "RevisionSeries",
     "RevisionSummary",
