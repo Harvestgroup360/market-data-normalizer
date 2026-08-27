@@ -11,14 +11,14 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Twenty-nine tagged releases, sixteen of them published to PyPI (the
+Thirty tagged releases, seventeen of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 795 tests.
+dependencies, Python 3.10+, 827 tests.
 
 | Layer | Modules |
 | --- | --- |
 | Ingest | `normalizers`, `csvio`, `jsonl`, `streams`, `records`, `symbols` |
-| Instrument identity | `instruments`, `universe` |
+| Instrument identity | `instruments`, `universe`, `membership` |
 | Cleaning | `quality` |
 | Aggregation | `bars`, `sessions`, `adjust` |
 | Microstructure | `book`, `consolidate`, `micro` |
@@ -27,12 +27,16 @@ dependencies, Python 3.10+, 795 tests.
 | Evaluation | `metrics`, `costs` |
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
-Shipped since the last revision of this file: `mixfreq`, which was the
-first item under *Under consideration* below. A slow series now carries the
+Shipped since the last revision of this file: `mixfreq` and `membership`,
+the first two items that stood under *Under consideration* below. A slow series now carries the
 moment each value became knowable rather than the period it describes, and
 `leak_report` counts the grid points a label-keyed join would have answered
 too early. The result on back-to-back periods is worth stating plainly: the
-naive join is wrong at every point, not most of them.
+naive join is wrong at every point, not most of them. `membership` builds an
+index history out of the add/delete files and periodic snapshots vendors
+actually ship, keeps the announcement and effective dates apart because they
+answer different questions, refuses to pick a date inside a window a snapshot
+only bounds, and measures the survivorship gap in both directions.
 
 ## Asked for
 
@@ -77,11 +81,6 @@ you need inside it, open an issue with the numbers — that is more useful to us
 than a vote.
 
 ## Under consideration
-
-**Point-in-time index membership from vendor files.** `universe` applies a
-membership record; producing one from the files vendors actually ship, with
-their revisions and their announcement-versus-effective dates, is a separate
-job and a place look-ahead hides well.
 
 **Position sizing and portfolio construction.** Volatility targeting and
 constraint handling would close the loop between `features`, `costs` and

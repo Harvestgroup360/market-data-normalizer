@@ -532,3 +532,68 @@ def test_mixfreq_reports_a_missing_column(tmp_path, capsys):
     p.write_text("start,value\n0,1.5\n")
     assert main(["mixfreq", str(p), "--interval", "1"]) == 1
     assert "error:" in capsys.readouterr().err
+
+
+# -- membership -------------------------------------------------------------
+
+
+def _changes_csv(path, rows=None):
+    rows = rows if rows is not None else [
+        ("A", "add", 0, ""),
+        ("B", "add", 0, ""),
+        ("B", "delete", 86_400_000_000_000 * 10, 86_400_000_000_000 * 7),
+    ]
+    with open(path, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["instrument_id", "action", "effective", "announced"])
+        for r in rows:
+            w.writerow(r)
+    return str(path)
+
+
+def test_membership_reports_the_file(tmp_path, capsys):
+    p = _changes_csv(tmp_path / "idx.csv")
+    assert main(["membership", p]) == 0
+    err = capsys.readouterr().err
+    assert "instruments          2" in err
+    assert "  deletions          1" in err
+
+
+def test_membership_flags_a_today_list(tmp_path, capsys):
+    p = _changes_csv(tmp_path / "idx.csv",
+                     [("A", "add", 0, ""), ("B", "add", 0, "")])
+    assert main(["membership", p]) == 0
+    err = capsys.readouterr().err
+    assert "nothing ever left this index" in err
+    assert "no change carries an announcement date" in err
+
+
+def test_membership_sizes_the_survivorship_gap(tmp_path, capsys):
+    p = _changes_csv(tmp_path / "idx.csv")
+    assert main(["membership", p, "--at", str(86_400_000_000_000)]) == 0
+    err = capsys.readouterr().err
+    assert "a today-list would drop  1" in err
+    assert "dropped: B" in err
+
+
+def test_membership_announced_basis_moves_the_composition(tmp_path, capsys):
+    p = _changes_csv(tmp_path / "idx.csv")
+    at = str(86_400_000_000_000 * 8)          # after announcement, before effect
+    assert main(["membership", p, "--at", at, "--basis", "announced"]) == 0
+    assert "on the announced basis: 1" in capsys.readouterr().err
+    assert main(["membership", p, "--at", at, "--basis", "effective"]) == 0
+    assert "on the effective basis: 2" in capsys.readouterr().err
+
+
+def test_membership_output_requires_a_moment(tmp_path, capsys):
+    p = _changes_csv(tmp_path / "idx.csv")
+    out = tmp_path / "m.csv"
+    assert main(["membership", p, "-o", str(out)]) == 1
+    assert "needs --at" in capsys.readouterr().err
+
+
+def test_membership_rejects_an_empty_file(tmp_path, capsys):
+    p = tmp_path / "e.csv"
+    p.write_text("instrument_id,action,effective\n")
+    assert main(["membership", str(p)]) == 1
+    assert "no changes" in capsys.readouterr().err

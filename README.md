@@ -520,6 +520,47 @@ $ mdnorm universe matrix.csv --listings listings.csv --pct-rank -o pit.csv
 $ mdnorm revisions gdp.csv -o published.csv
 ```
 
+### Who was in the index, and when they were told
+
+`universe` applies a membership record. Producing one from the files a vendor
+actually ships is a separate job, and it is where survivorship gets in.
+
+```python
+from mdnorm import MembershipHistory, Basis, survivorship_gap
+
+history = MembershipHistory.from_changes(changes)
+history.members_at(t, basis=Basis.EFFECTIVE)   # who was in the index
+history.report()                                # what the file cannot say
+survivorship_gap(history, t)                    # what a today-list would cost
+```
+
+**Two dates, and they answer different questions.** An addition is announced
+on one day and takes effect on another. *Who was in the index* is the
+effective date; *when could anyone have known* is the announcement. Rank on
+one and trade the other and the file will never object, because both columns
+are correct. `Basis` has no default, so the question has to be named.
+
+**A snapshot cannot express a deletion.** Names that leave do not appear as
+departures, they simply stop being listed, and the last file that showed them
+is not the day they left. `from_snapshots` therefore dates each inferred change
+at the *later* snapshot — never claiming membership earlier than the file
+supports — and records the window it really fell inside. On a monthly file
+that window is a month, which is longer than many holding periods.
+
+**A today-list is the classic error, and it is measurable.**
+`survivorship_gap` returns both directions: the names a today-list drops
+(they left, usually not for good reasons) and the names it holds too early
+(they had not joined yet). The two do not cancel — one removes losers and the
+other adds winners — which is why the effect is large and one-directional.
+
+**The report names the tell.** If nothing ever left, the file is a list of
+today's members wearing a history's clothes, and `mdnorm membership` says so
+out loud rather than computing quietly on it.
+
+```console
+$ mdnorm membership index_changes.csv --at 1770000000000000000
+```
+
 ### Values that get corrected later
 
 Every observation so far has had one timestamp: when it happened. A lot of real

@@ -57,6 +57,17 @@ from .mixfreq import (
     leak_report,
     read_periods_csv,
 )
+from .membership import (
+    Basis,
+    ChangeKind,
+    IndexChange,
+    IndexSnapshot,
+    InferredChange,
+    MembershipHistory,
+    MembershipReport,
+    read_index_changes_csv,
+    survivorship_gap,
+)
 from .metrics import (
     Drawdown,
     Moments,
@@ -170,7 +181,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.18.0"
+__version__ = "1.19.0"
 
 __all__ = [
     "MarketEvent",
@@ -254,6 +265,15 @@ __all__ = [
     "LeakReport",
     "leak_report",
     "read_periods_csv",
+    "Basis",
+    "ChangeKind",
+    "IndexChange",
+    "IndexSnapshot",
+    "InferredChange",
+    "MembershipHistory",
+    "MembershipReport",
+    "survivorship_gap",
+    "read_index_changes_csv",
     "Revision",
     "RevisionSeries",
     "RevisionSummary",

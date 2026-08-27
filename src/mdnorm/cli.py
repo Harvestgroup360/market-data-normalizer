@@ -43,6 +43,7 @@ from .costs import (CostModel, Fees, ImpactModel, Liquidity, apply_costs,
                     breakeven_participation, capacity, cost_report, estimate)
 from .instruments import (SymbolMap, key_by_instrument,
                           read_symbol_map_csv, series_segments)
+from .membership import Basis, read_index_changes_csv, survivorship_gap
 from .mixfreq import leak_report, read_periods_csv
 from .revisions import RevisionSeries, read_revisions_csv
 from .universe import (Universe, cross_section, cross_sectional_rank,
@@ -1027,6 +1028,74 @@ def _cmd_mixfreq(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_membership(args: argparse.Namespace) -> int:
+    try:
+        history = read_index_changes_csv(
+            args.changes,
+            instrument_column=args.instrument_field,
+            kind_column=args.action_field,
+            effective_column=args.effective_field,
+            announced_column=args.announced_field,
+            name=args.name,
+        )
+    except (KeyError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if len(history) == 0:
+        print("error: no changes in input", file=sys.stderr)
+        return 1
+
+    rep = history.report()
+    print(f"instruments          {rep.instruments}", file=sys.stderr)
+    print(f"changes              {rep.changes}", file=sys.stderr)
+    print(f"  additions          {rep.additions}", file=sys.stderr)
+    print(f"  deletions          {rep.deletions}", file=sys.stderr)
+    print(f"never removed        {rep.never_removed}", file=sys.stderr)
+    print(f"no announcement      {rep.without_announcement}", file=sys.stderr)
+    if rep.announcement_coverage is not None:
+        print(f"announcement cover   {rep.announcement_coverage * 100:.0f}%",
+              file=sys.stderr)
+    if rep.max_uncertainty_ns is not None:
+        print(f"worst dating window  {rep.max_uncertainty_ns / 86_400e9:,.0f}d",
+              file=sys.stderr)
+
+    if rep.deletions == 0 and rep.instruments:
+        print("note: nothing ever left this index. Over any real history that "
+              "does not happen, so this file is very likely a list of today's "
+              "members rather than a record of who was in it when.",
+              file=sys.stderr)
+    if rep.without_announcement == rep.changes:
+        print("note: no change carries an announcement date, so the announced "
+              "and effective bases are identical here. Any study of the "
+              "announcement effect is measuring the effective date.",
+              file=sys.stderr)
+
+    if args.at is not None:
+        basis = Basis(args.basis)
+        members = history.members_at(args.at, basis=basis)
+        print(f"members at {args.at} on the {basis.value} basis: "
+              f"{len(members)}", file=sys.stderr)
+        missed, phantom = survivorship_gap(history, args.at, basis=basis)
+        print(f"a today-list would drop  {len(missed)}", file=sys.stderr)
+        print(f"a today-list would add   {len(phantom)}", file=sys.stderr)
+        for iid in missed[:args.list_limit]:
+            print(f"  dropped: {iid}", file=sys.stderr)
+        if len(missed) > args.list_limit:
+            print(f"  ... and {len(missed) - args.list_limit} more",
+                  file=sys.stderr)
+        if args.output:
+            with open(args.output, "w", newline="", encoding="utf-8") as fh:
+                fh.write("instrument_id\n")
+                for iid in members:
+                    fh.write(f"{iid}\n")
+            print(f"wrote {args.output}", file=sys.stderr)
+    elif args.output:
+        print("error: --output needs --at, so there is a moment to write",
+              file=sys.stderr)
+        return 1
+    return 0
+
+
 def _cmd_instruments(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -1471,6 +1540,27 @@ def build_parser() -> argparse.ArgumentParser:
     p_x.add_argument("--name", default="value", metavar="NAME",
                      help="column name for the series (default: value)")
     p_x.set_defaults(func=_cmd_mixfreq)
+
+
+    p_mb = sub.add_parser("membership",
+                          help="read an index add/delete file, report what it "
+                               "can support, and size the survivorship gap")
+    p_mb.add_argument("changes", help="CSV of instrument_id,action,effective[,announced]")
+    p_mb.add_argument("--at", type=int, default=None, metavar="NS",
+                      help="report the composition at this timestamp")
+    p_mb.add_argument("--basis", choices=["effective", "announced"],
+                      default="effective",
+                      help="which date decides membership (default: effective)")
+    p_mb.add_argument("-o", "--output", default=None,
+                      help="write the members at --at to a CSV")
+    p_mb.add_argument("--list-limit", type=int, default=20, metavar="N",
+                      help="how many dropped names to list (default: 20)")
+    p_mb.add_argument("--instrument-field", default="instrument_id", metavar="NAME")
+    p_mb.add_argument("--action-field", default="action", metavar="NAME")
+    p_mb.add_argument("--effective-field", default="effective", metavar="NAME")
+    p_mb.add_argument("--announced-field", default="announced", metavar="NAME")
+    p_mb.add_argument("--name", default="", metavar="NAME")
+    p_mb.set_defaults(func=_cmd_membership)
 
 
     p_i = sub.add_parser("instruments",
