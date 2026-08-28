@@ -19,6 +19,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm metrics pnl.csv --column ret --trials 200 --trial-variance 0.02
     mdnorm costs pnl.csv --cost-bps 5 --edge-bps 20 --adv 1e6 --volatility 0.02
     mdnorm instruments symbol_map.csv trades.csv -o keyed.csv
+    mdnorm calendar us_2026.csv --session 09:30-16:00 --tz America/New_York
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -43,6 +44,7 @@ from .costs import (CostModel, Fees, ImpactModel, Liquidity, apply_costs,
                     breakeven_participation, capacity, cost_report, estimate)
 from .instruments import (SymbolMap, key_by_instrument,
                           read_symbol_map_csv, series_segments)
+from .calendars import read_calendar_csv
 from .membership import Basis, read_index_changes_csv, survivorship_gap
 from .reconcile import reconcile, suggest_shift
 from .mixfreq import leak_report, read_periods_csv
@@ -1097,6 +1099,77 @@ def _cmd_membership(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_calendar(args: argparse.Namespace) -> int:
+    from datetime import date as _date
+
+    def as_day(text: Optional[str]) -> Optional[_date]:
+        return _date.fromisoformat(text) if text else None
+
+    session = parse_session(args.session, args.tz)
+    cal = read_calendar_csv(args.calendar, session,
+                            first_day=as_day(args.first_day),
+                            last_day=as_day(args.last_day),
+                            name=args.calendar)
+    first, last = cal.covers
+    start = as_day(getattr(args, "from_day", None)) or first
+    end = as_day(args.to_day) or last
+
+    rep = cal.report(start, end)
+    seconds = cal.trading_seconds_between(start, end)
+    minutes = seconds // 60
+
+    print(f"calendar covers      {first}..{last}", file=sys.stderr)
+    print(f"reported range       {rep.first_day}..{rep.last_day} "
+          f"({rep.calendar_days} calendar days)", file=sys.stderr)
+    print(f"trading days         {rep.trading_days}", file=sys.stderr)
+    print(f"  holidays           {rep.holidays}", file=sys.stderr)
+    print(f"  weekend days       {rep.weekend_days}", file=sys.stderr)
+    print(f"early closes         {rep.early_closes}", file=sys.stderr)
+    print(f"trading minutes      {minutes}", file=sys.stderr)
+
+    if rep.trading_days:
+        full = 0
+        for day in cal.trading_days_between(start, end):
+            span = cal.session_on(day)
+            if span:
+                full = max(full, span[1] - span[0])
+        lost = full // 1_000_000_000 * rep.trading_days - seconds
+        if lost:
+            print(f"note: early closes cost {lost // 60} minute(s) against a "
+                  f"flat {full // 60_000_000_000}-minute session. An "
+                  f"annualisation that multiplies sessions by a fixed length "
+                  f"is high by that much.", file=sys.stderr)
+        if (rep.first_day.month, rep.first_day.day) == (1, 1) and \
+                (rep.last_day.month, rep.last_day.day) == (12, 31) and \
+                rep.first_day.year == rep.last_day.year:
+            print(f"for `mdnorm features`: --sessions-per-year "
+                  f"{rep.trading_days} --session-length "
+                  f"{full // 1_000_000_000}s", file=sys.stderr)
+            if rep.trading_days != 252:
+                import math
+                skew = math.sqrt(252 / rep.trading_days) - 1
+                direction = "overstates" if skew > 0 else "understates"
+                print(f"note: {rep.first_day.year} has {rep.trading_days} "
+                      f"sessions here, not the conventional 252. Annualising "
+                      f"a volatility on 252 {direction} it by "
+                      f"{abs(skew) * 100:.2f}%.", file=sys.stderr)
+        else:
+            print("note: the range is not a whole year, so it does not give a "
+                  "sessions-per-year figure. Report a calendar year to get "
+                  "one.", file=sys.stderr)
+
+    if not args.output:
+        return 0
+    with open(args.output, "w", newline="", encoding="utf-8") as fh:
+        fh.write("date,close,early\n")
+        for day in cal.trading_days_between(start, end):
+            close = cal.close_time(day)
+            early = "1" if close != session.end else "0"
+            fh.write(f"{day},{close},{early}\n")
+    print(f"wrote {args.output}", file=sys.stderr)
+    return 0
+
+
 def _cmd_reconcile(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -1634,6 +1707,30 @@ def build_parser() -> argparse.ArgumentParser:
     p_mb.add_argument("--announced-field", default="announced", metavar="NAME")
     p_mb.add_argument("--name", default="", metavar="NAME")
     p_mb.set_defaults(func=_cmd_membership)
+
+
+    p_cal = sub.add_parser("calendar",
+                           help="count the sessions and minutes a venue was "
+                                "actually open, given its holidays and "
+                                "half-days")
+    p_cal.add_argument("calendar", help="CSV of date,kind[,close,name]")
+    p_cal.add_argument("--session", metavar="HH:MM-HH:MM", required=True,
+                       help="the recurring session, e.g. 09:30-16:00")
+    p_cal.add_argument("--tz", default="UTC", metavar="ZONE",
+                       help="timezone for --session, e.g. America/New_York")
+    p_cal.add_argument("--first-day", default=None, metavar="YYYY-MM-DD",
+                       help="state the first day the file covers instead of "
+                            "inferring it from the exceptions in it")
+    p_cal.add_argument("--last-day", default=None, metavar="YYYY-MM-DD",
+                       help="state the last day the file covers")
+    p_cal.add_argument("--from", dest="from_day", default=None,
+                       metavar="YYYY-MM-DD",
+                       help="report from this day (default: the whole file)")
+    p_cal.add_argument("--to", dest="to_day", default=None,
+                       metavar="YYYY-MM-DD", help="report up to this day")
+    p_cal.add_argument("-o", "--output", default=None,
+                       help="write the trading days and their closes to a CSV")
+    p_cal.set_defaults(func=_cmd_calendar)
 
 
     p_rc = sub.add_parser("reconcile",

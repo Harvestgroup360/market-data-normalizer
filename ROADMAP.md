@@ -11,27 +11,27 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Thirty-one tagged releases, eighteen of them published to PyPI (the
+Thirty-two tagged releases, nineteen of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 857 tests.
+dependencies, Python 3.10+, 890 tests.
 
 | Layer | Modules |
 | --- | --- |
 | Ingest | `normalizers`, `csvio`, `jsonl`, `streams`, `records`, `symbols` |
 | Instrument identity | `instruments`, `universe`, `membership` |
 | Cleaning | `quality`, `reconcile` |
-| Aggregation | `bars`, `sessions`, `adjust` |
+| Aggregation | `bars`, `sessions`, `calendars`, `adjust` |
 | Microstructure | `book`, `consolidate`, `micro` |
 | Execution | `execution` |
 | Research | `align`, `features`, `labels`, `revisions`, `mixfreq` |
 | Evaluation | `metrics`, `costs` |
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
-Shipped since the last revision of this file: `mixfreq`, `membership` and
-`reconcile`. The first two were the items that stood under *Under
-consideration* below; the third was not on the list, and is here because
-comparing two sources of the same series is the check people run before
-trusting either, and nothing in the library did it. A slow series now carries the
+Shipped since the last revision of this file: `mixfreq`, `membership`,
+`reconcile` and `calendars`. The first two were the items that stood under
+*Under consideration* below; the other two were not on the list. `reconcile` is
+here because comparing two sources of the same series is the check people run
+before trusting either, and nothing in the library did it. A slow series now carries the
 moment each value became knowable rather than the period it describes, and
 `leak_report` counts the grid points a label-keyed join would have answered
 too early. The result on back-to-back periods is worth stating plainly: the
@@ -43,6 +43,14 @@ only bounds, and measures the survivorship gap in both directions. `reconcile` c
 two feeds of the same series, keeps coverage gaps apart from value
 differences instead of averaging them into one match rate, and diagnoses the
 common case where zero overlap is a clock offset rather than a disagreement.
+`calendars` is the smallest of the four and closes the oldest gap: `sessions`
+described a recurring window and nothing described the exceptions to it, so a
+holiday was indistinguishable from an outage and a half-day was silently
+counted as a full one. It also makes the constant this file refuses to ship a
+computable number — the sessions in a year, and the minutes in them, come out
+of the calendar rather than out of 252. A calendar refuses to answer for a
+date its source file never covered, which is the same rule the rest of the
+library follows: report the gap, do not fill it.
 
 ## Asked for
 

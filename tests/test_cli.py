@@ -674,3 +674,80 @@ def test_reconcile_rejects_an_empty_input(tmp_path, capsys):
     b.write_text("ts_ns,value\n")
     assert main(["reconcile", a, str(b)]) == 1
     assert "must contain observations" in capsys.readouterr().err
+
+
+# -- calendar ---------------------------------------------------------------
+
+
+def _calendar_csv(path, rows):
+    path.write_text("date,kind,close,name\n" + "".join(rows))
+    return str(path)
+
+
+US = ["--session", "09:30-16:00", "--tz", "America/New_York"]
+
+
+def _us_2026(tmp_path):
+    return _calendar_csv(tmp_path / "cal.csv", [
+        "2026-01-01,holiday,,New Year's Day\n",
+        "2026-07-03,holiday,,Independence Day\n",
+        "2026-11-26,holiday,,Thanksgiving\n",
+        "2026-11-27,early_close,13:00,Day after Thanksgiving\n",
+        "2026-12-25,holiday,,Christmas Day\n",
+    ])
+
+
+def test_calendar_counts_the_sessions_it_was_given(tmp_path, capsys):
+    assert main(["calendar", _us_2026(tmp_path)] + US) == 0
+    err = capsys.readouterr().err
+    assert "calendar covers      2026-01-01..2026-12-31" in err
+    assert "trading days         257" in err     # 365 - 104 weekends - 4
+    assert "early closes         1" in err
+
+
+def test_calendar_reports_the_year_rather_than_the_convention(tmp_path, capsys):
+    assert main(["calendar", _us_2026(tmp_path)] + US) == 0
+    err = capsys.readouterr().err
+    assert "--sessions-per-year 257" in err
+    assert "not the conventional 252" in err
+
+
+def test_calendar_prices_the_early_closes(tmp_path, capsys):
+    assert main(["calendar", _us_2026(tmp_path)] + US) == 0
+    err = capsys.readouterr().err
+    assert "early closes cost 180 minute(s)" in err
+
+
+def test_calendar_narrowed_to_a_week(tmp_path, capsys):
+    assert main(["calendar", _us_2026(tmp_path)] + US +
+                ["--from", "2026-11-23", "--to", "2026-11-27"]) == 0
+    err = capsys.readouterr().err
+    assert "trading days         4" in err         # Thanksgiving is shut
+    assert "trading minutes      1380" in err      # three full days plus 210
+    assert "not a whole year" in err
+
+
+def test_calendar_writes_the_days_and_marks_the_short_ones(tmp_path):
+    out = tmp_path / "days.csv"
+    assert main(["calendar", _us_2026(tmp_path)] + US +
+                ["--from", "2026-11-23", "--to", "2026-11-27",
+                 "-o", str(out)]) == 0
+    rows = list(csv.DictReader(open(out)))
+    assert [r["date"] for r in rows] == ["2026-11-23", "2026-11-24",
+                                         "2026-11-25", "2026-11-27"]
+    assert [r["early"] for r in rows] == ["0", "0", "0", "1"]
+
+
+def test_calendar_refuses_a_day_it_does_not_cover(tmp_path, capsys):
+    assert main(["calendar", _us_2026(tmp_path)] + US +
+                ["--to", "2027-01-04"]) == 1
+    assert "outside this calendar" in capsys.readouterr().err
+
+
+def test_calendar_accepts_a_stated_range_for_an_empty_file(tmp_path, capsys):
+    path = _calendar_csv(tmp_path / "empty.csv", [])
+    assert main(["calendar", path] + US +
+                ["--first-day", "2026-01-01", "--last-day", "2026-01-31"]) == 0
+    err = capsys.readouterr().err
+    assert "trading days         22" in err
+    assert "holidays           0" in err

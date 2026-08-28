@@ -255,7 +255,6 @@ def leak_report(series: PeriodSeries, grid: Sequence[int]) -> LeakReport:
     not knowing.
     """
     knowable = series.knowable_series()
-    labelled = series.labelled_series()
     lag = series.publication_lag_ns
     # Which period each labelled value belongs to, so a leak can be measured
     # against the moment that value became readable rather than against the

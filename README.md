@@ -128,6 +128,51 @@ bucket. From the command line:
 $ mdnorm bars trades.csv --interval 5m --session 09:30-16:00 --tz America/New_York -o rth.csv
 ```
 
+### Holidays, half-days, and the year that is not 252 sessions
+
+A session is a recurring window. A calendar is that window plus the exceptions
+to it, and the exceptions are the part that quietly breaks things.
+
+```python
+from mdnorm import read_calendar_csv, US_EQUITY_RTH
+
+cal = read_calendar_csv("us_2026.csv", US_EQUITY_RTH)
+cal.is_trading_day(date(2026, 7, 3))                     # False, from the file
+cal.close_time(date(2026, 11, 27))                       # 13:00, a half-day
+cal.trading_minutes_between(jan, dec)                    # not sessions x 390
+```
+
+**A missing holiday looks exactly like missing data.** A pipeline that does not
+know a date is a holiday sees a day-long gap and reports an outage, or fills
+it, or drops the instrument for poor coverage. All three are wrong in the same
+way: the data was never supposed to be there.
+
+**A half-day is not half a problem.** An early close shortens the session and
+changes nothing else, so bars keep being cut against a 6.5-hour assumption, a
+volatility annualised on session length is overstated for that day, and a
+staleness check fires on every instrument at once an hour before it should.
+
+**A calendar cannot answer outside the range it was given.** A file listing
+2026 says nothing about 2027, and a calendar that treats an unknown weekday as
+open turns a missing file into a confident wrong answer. Every query outside
+`covers` raises instead — noisy exactly once, and then correct.
+
+**252 is a convention, not a count.** How many sessions a year holds depends on
+where the weekends and holidays fell; how many *minutes* it holds depends on
+how many of those sessions closed early. Both are computable, and both rescale
+every annualised figure in a report while leaving its shape untouched.
+
+```console
+$ mdnorm calendar us_2026.csv --session 09:30-16:00 --tz America/New_York
+trading days         251
+early closes         2
+trading minutes      97530
+note: early closes cost 360 minute(s) against a flat 390-minute session.
+for `mdnorm features`: --sessions-per-year 251 --session-length 23400s
+note: 2026 has 251 sessions here, not the conventional 252. Annualising a
+volatility on 252 overstates it by 0.20%.
+```
+
 ### Corporate actions and contract rolls
 
 A raw price series is not continuous. A 4-for-1 split divides the printed
@@ -927,6 +972,7 @@ $ mdnorm revisions gdp.csv -o published.csv
 $ mdnorm metrics pnl.csv --column ret --trials 500 --trial-variance 0.004
 $ mdnorm costs pnl.csv --cost-bps 5 --edge-bps 20 --adv 1e6 --volatility 0.02
 $ mdnorm instruments symbol_map.csv trades.csv -o keyed.csv
+$ mdnorm calendar us_2026.csv --session 09:30-16:00 --tz America/New_York
 ```
 
 Also available as `python -m mdnorm`.
@@ -989,6 +1035,7 @@ raw feed ──► normalizer ─────────────► MarketE
                     ├── SymbolMap.instrument_at()    which instrument the ticker named then
                     ├── timeutil.*_to_ns()           any time → ns UTC
                     ├── adjust.adjust_events()       splits/divs/rolls
+                    ├── TradingCalendar.is_open()    the holidays and half-days
                     ├── micro.infer_sides()          who crossed the spread
                     ├── book.OrderBook()             deltas → live book → quotes
                     ├── consolidate()                many venues → one best bid/offer

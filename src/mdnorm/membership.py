@@ -42,10 +42,9 @@ that error one level up.
 """
 from __future__ import annotations
 
-from bisect import bisect_right
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, FrozenSet, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import FrozenSet, Iterable, List, Optional, Set, Tuple
 
 from .fileio import open_text
 from .timeutil import iso_to_ns

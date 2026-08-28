@@ -114,6 +114,13 @@ from .universe import (
     mask_to_universe,
     read_listings_csv,
 )
+from .calendars import (
+    CalendarReport,
+    EarlyClose,
+    Holiday,
+    TradingCalendar,
+    read_calendar_csv,
+)
 from .book import BookDelta, OrderBook, SequenceGapError, replay_book
 from .features import (
     ReturnMethod,
@@ -190,7 +197,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.20.0"
+__version__ = "1.21.0"
 
 __all__ = [
     "MarketEvent",
@@ -290,6 +297,11 @@ __all__ = [
     "reconcile",
     "reconcile_bars",
     "suggest_shift",
+    "Holiday",
+    "EarlyClose",
+    "CalendarReport",
+    "TradingCalendar",
+    "read_calendar_csv",
     "Revision",
     "RevisionSeries",
     "RevisionSummary",
