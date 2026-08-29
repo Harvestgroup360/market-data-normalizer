@@ -121,6 +121,17 @@ from .calendars import (
     TradingCalendar,
     read_calendar_csv,
 )
+from .fx import (
+    Conversion,
+    CurrencyPair,
+    FxRates,
+    Quote,
+    ReturnDecomposition,
+    convert_bars,
+    convert_series,
+    decompose_return,
+    read_fx_csv,
+)
 from .book import BookDelta, OrderBook, SequenceGapError, replay_book
 from .features import (
     ReturnMethod,
@@ -197,7 +208,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.21.0"
+__version__ = "1.22.0"
 
 __all__ = [
     "MarketEvent",
@@ -302,6 +313,15 @@ __all__ = [
     "CalendarReport",
     "TradingCalendar",
     "read_calendar_csv",
+    "Conversion",
+    "CurrencyPair",
+    "FxRates",
+    "Quote",
+    "ReturnDecomposition",
+    "convert_bars",
+    "convert_series",
+    "decompose_return",
+    "read_fx_csv",
     "Revision",
     "RevisionSeries",
     "RevisionSummary",

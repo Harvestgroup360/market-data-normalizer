@@ -11,16 +11,16 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Thirty-two tagged releases, nineteen of them published to PyPI (the
+Thirty-three tagged releases, twenty of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 890 tests.
+dependencies, Python 3.10+, 939 tests.
 
 | Layer | Modules |
 | --- | --- |
 | Ingest | `normalizers`, `csvio`, `jsonl`, `streams`, `records`, `symbols` |
 | Instrument identity | `instruments`, `universe`, `membership` |
 | Cleaning | `quality`, `reconcile` |
-| Aggregation | `bars`, `sessions`, `calendars`, `adjust` |
+| Aggregation | `bars`, `sessions`, `calendars`, `adjust`, `fx` |
 | Microstructure | `book`, `consolidate`, `micro` |
 | Execution | `execution` |
 | Research | `align`, `features`, `labels`, `revisions`, `mixfreq` |
@@ -28,8 +28,8 @@ dependencies, Python 3.10+, 890 tests.
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
 Shipped since the last revision of this file: `mixfreq`, `membership`,
-`reconcile` and `calendars`. The first two were the items that stood under
-*Under consideration* below; the other two were not on the list. `reconcile` is
+`reconcile`, `calendars` and `fx`. The first two were the items that stood under
+*Under consideration* below; the other three were not on the list. `reconcile` is
 here because comparing two sources of the same series is the check people run
 before trusting either, and nothing in the library did it. A slow series now carries the
 moment each value became knowable rather than the period it describes, and
@@ -51,6 +51,18 @@ computable number — the sessions in a year, and the minutes in them, come out
 of the calendar rather than out of 252. A calendar refuses to answer for a
 date its source file never covered, which is the same rule the rest of the
 library follows: report the gap, do not fill it.
+
+`fx` is the newest and the one we expected to be simplest. A price is a number
+and a currency, most pipelines carry only the number, and the moment a study
+spans two venues that quote differently every figure in it depends on a second
+series nobody was watching. The module converts as of each observation and has
+no function that takes a single rate, because a single rate restates a whole
+history using a number that did not exist until the end of it. `max_age_ns` is
+required rather than defaulted, since FX stops over weekends while other venues
+do not. Direction is carried in the type instead of inferred from a pair name,
+and an inversion is recorded in the result rather than performed quietly. No
+path through the currency graph is ever searched for: state the vehicle or the
+cross is refused, because choosing a route is choosing whose spreads you pay.
 
 ## Asked for
 

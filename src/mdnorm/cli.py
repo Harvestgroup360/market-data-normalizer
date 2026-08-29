@@ -20,6 +20,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm costs pnl.csv --cost-bps 5 --edge-bps 20 --adv 1e6 --volatility 0.02
     mdnorm instruments symbol_map.csv trades.csv -o keyed.csv
     mdnorm calendar us_2026.csv --session 09:30-16:00 --tz America/New_York
+    mdnorm fx prices.csv rates.csv --from EUR --to USD --max-age 1m -o usd.csv
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -45,6 +46,7 @@ from .costs import (CostModel, Fees, ImpactModel, Liquidity, apply_costs,
 from .instruments import (SymbolMap, key_by_instrument,
                           read_symbol_map_csv, series_segments)
 from .calendars import read_calendar_csv
+from .fx import convert_series, read_fx_csv
 from .membership import Basis, read_index_changes_csv, survivorship_gap
 from .reconcile import reconcile, suggest_shift
 from .mixfreq import leak_report, read_periods_csv
@@ -1099,6 +1101,77 @@ def _cmd_membership(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_fx(args: argparse.Namespace) -> int:
+    import csv as _csv
+
+    rows = []
+    with open_text(args.input) as fh:
+        for row in _csv.DictReader(fh):
+            rows.append((int(row[args.ts_field]),
+                         Decimal(row[args.value_field].strip())))
+    if not rows:
+        print("error: the input has no observations", file=sys.stderr)
+        return 1
+    prices = AsOfSeries(rows)
+    rates = read_fx_csv(args.rates, allow_inverse=not args.no_inverse)
+
+    converted, dropped = convert_series(
+        prices, rates, base=args.base, to=args.quote,
+        max_age_ns=args.max_age, via=args.via)
+
+    print(f"observations         {len(prices)}", file=sys.stderr)
+    print(f"converted            {len(converted)}", file=sys.stderr)
+    print(f"no usable rate       {dropped}", file=sys.stderr)
+    print(f"rate pairs available {[str(p) for p in rates.pairs]}",
+          file=sys.stderr)
+
+    if dropped:
+        share = dropped * 100 // len(prices)
+        print(f"note: {dropped} observation(s), {share}% of the input, had no "
+              f"rate within {args.max_age / 1e9:g}s and were dropped rather than "
+              f"converted against an older one. FX stops over weekends while "
+              f"other venues do not; widen --max-age deliberately or accept "
+              f"the gap, but do not do neither.", file=sys.stderr)
+    if len(converted):
+        first = rates.convert(Decimal(1), args.base, args.quote,
+                              prices.first_ts_ns, max_age_ns=args.max_age,
+                              via=args.via)
+        last = rates.convert(Decimal(1), args.base, args.quote,
+                             prices.last_ts_ns, max_age_ns=args.max_age,
+                             via=args.via)
+        if first is not None and last is not None and first.rate != last.rate:
+            move = (last.rate / first.rate - 1) * 100
+            print(f"note: the rate moved {move:+.2f}% across this span, so a "
+                  f"single-rate conversion would have restated the whole "
+                  f"series by a number that did not exist until the end of "
+                  f"it.", file=sys.stderr)
+        if any(leg.inverted for c in (first, last) if c for leg in c.legs):
+            print("note: the rate was used upside-down relative to how it is "
+                  "stored; check that the pair in the file means what you "
+                  "think it means.", file=sys.stderr)
+        if first is not None and first.crossed:
+            print(f"note: crossed through {args.via}, so both legs' spreads "
+                  f"and both staleness windows apply.", file=sys.stderr)
+
+    if not args.output:
+        return 0
+    with open(args.output, "w", newline="", encoding="utf-8") as fh:
+        w = _csv.writer(fh)
+        w.writerow([args.ts_field, args.value_field])
+        for ts, value in zip(_fx_timestamps(converted), _fx_values(converted)):
+            w.writerow([ts, value])
+    print(f"wrote {args.output}", file=sys.stderr)
+    return 0
+
+
+def _fx_timestamps(series):
+    return list(series._ts)      # noqa: SLF001
+
+
+def _fx_values(series):
+    return [series.at(t)[0] for t in _fx_timestamps(series)]
+
+
 def _cmd_calendar(args: argparse.Namespace) -> int:
     from datetime import date as _date
 
@@ -1707,6 +1780,34 @@ def build_parser() -> argparse.ArgumentParser:
     p_mb.add_argument("--announced-field", default="announced", metavar="NAME")
     p_mb.add_argument("--name", default="", metavar="NAME")
     p_mb.set_defaults(func=_cmd_membership)
+
+
+    p_fx = sub.add_parser("fx",
+                          help="convert a price series into another currency "
+                               "as of each observation, refusing rates that "
+                               "are too stale to use")
+    p_fx.add_argument("input", help="CSV of ts_ns,value")
+    p_fx.add_argument("rates", help="CSV of pair,ts_ns,rate")
+    p_fx.add_argument("--from", dest="base", required=True, metavar="CCY",
+                      help="the currency the input is priced in")
+    p_fx.add_argument("--to", dest="quote", required=True, metavar="CCY",
+                      help="the currency to convert into")
+    p_fx.add_argument("--max-age", type=parse_interval, required=True,
+                      metavar="DUR",
+                      help="how old a rate may be and still be used, e.g. 1m. "
+                           "Required: an as-of join with no limit will convert "
+                           "a Sunday print with Friday's rate")
+    p_fx.add_argument("--via", default=None, metavar="CCY",
+                      help="vehicle currency for a cross; no path is searched "
+                           "for, so state it or the conversion is refused")
+    p_fx.add_argument("--no-inverse", action="store_true",
+                      help="refuse to answer a pair by inverting the one "
+                           "stored the other way round")
+    p_fx.add_argument("-o", "--output", default=None,
+                      help="write the converted series to a CSV")
+    p_fx.add_argument("--ts-field", default="ts_ns", metavar="NAME")
+    p_fx.add_argument("--value-field", default="value", metavar="NAME")
+    p_fx.set_defaults(func=_cmd_fx)
 
 
     p_cal = sub.add_parser("calendar",

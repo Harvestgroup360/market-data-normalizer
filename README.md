@@ -173,6 +173,55 @@ note: 2026 has 251 sessions here, not the conventional 252. Annualising a
 volatility on 252 overstates it by 0.20%.
 ```
 
+### A price is a number and a currency
+
+The moment a study spans venues that quote in different currencies, every
+figure in it depends on a second series nobody was watching.
+
+```python
+from mdnorm import CurrencyPair, FxRates, convert_series, decompose_return
+
+rates = FxRates({CurrencyPair("EUR", "USD"): eurusd})
+usd, dropped = convert_series(prices, rates, base="EUR", to="USD",
+                              max_age_ns=MINUTE)
+```
+
+**There is no default conversion time.** Converting at the observation's own
+timestamp, at a daily fix, or at the end of the study are three different
+questions, and only the first was available to someone standing at that
+moment. The last is the one that gets used by accident, because one rate is
+easier to obtain than a series — and it restates the whole history using a
+number that did not exist until the end of it. Nothing here accepts a scalar
+rate.
+
+**Staleness is the ordinary failure.** FX stops over weekends while other
+venues keep trading, so an as-of join with no age limit converts a Sunday
+print with Friday's close. `max_age_ns` is required, and every conversion
+carries the age of the rate it used.
+
+**Direction is not guessable from a name.** Vendors disagree about which way
+round to publish a pair, and a rate applied upside-down is either wrong by a
+factor of thousands or — near parity — wrong by a few per cent and entirely
+plausible. Pairs carry an explicit base and quote, inversion is recorded in
+the result, and it can be refused outright.
+
+**A cross is not free, and no path is searched for.** Going through a vehicle
+currency multiplies two quotes and inherits both spreads and both staleness
+windows. State the vehicle with `via=` or the conversion is refused: a library
+that finds its own way through the currency graph is choosing which spreads
+you pay, invisibly.
+
+**A converted return is not a converted price.** `(1 + total) = (1 + asset)(1
++ fx)` holds exactly; the familiar shorthand adds the two and drops the
+product. `decompose_return` returns both and the difference between them.
+
+```console
+$ mdnorm fx prices.csv rates.csv --from EUR --to USD --max-age 1m -o usd.csv
+note: the rate moved +9.09% across this span, so a single-rate conversion
+would have restated the whole series by a number that did not exist until the
+end of it.
+```
+
 ### Corporate actions and contract rolls
 
 A raw price series is not continuous. A 4-for-1 split divides the printed
@@ -973,6 +1022,7 @@ $ mdnorm metrics pnl.csv --column ret --trials 500 --trial-variance 0.004
 $ mdnorm costs pnl.csv --cost-bps 5 --edge-bps 20 --adv 1e6 --volatility 0.02
 $ mdnorm instruments symbol_map.csv trades.csv -o keyed.csv
 $ mdnorm calendar us_2026.csv --session 09:30-16:00 --tz America/New_York
+$ mdnorm fx prices.csv rates.csv --from EUR --to USD --max-age 1m -o usd.csv
 ```
 
 Also available as `python -m mdnorm`.
@@ -1036,6 +1086,7 @@ raw feed ──► normalizer ─────────────► MarketE
                     ├── timeutil.*_to_ns()           any time → ns UTC
                     ├── adjust.adjust_events()       splits/divs/rolls
                     ├── TradingCalendar.is_open()    the holidays and half-days
+                    ├── FxRates.convert()            a price in another currency
                     ├── micro.infer_sides()          who crossed the spread
                     ├── book.OrderBook()             deltas → live book → quotes
                     ├── consolidate()                many venues → one best bid/offer

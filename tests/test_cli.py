@@ -751,3 +751,101 @@ def test_calendar_accepts_a_stated_range_for_an_empty_file(tmp_path, capsys):
     err = capsys.readouterr().err
     assert "trading days         22" in err
     assert "holidays           0" in err
+
+
+# -- fx ---------------------------------------------------------------------
+
+
+def _rates_csv(path, rows):
+    path.write_text("pair,ts_ns,rate\n" + "".join(f"{p},{t},{r}\n"
+                                                  for p, t, r in rows))
+    return str(path)
+
+
+HOUR_NS = 3600 * 10**9
+
+
+def _fx_fixture(tmp_path):
+    prices = _series_csv(tmp_path / "px.csv",
+                         [(0, "100"), (HOUR_NS, "100")])
+    rates = _rates_csv(tmp_path / "fx.csv",
+                       [("EUR/USD", 0, "1.10"), ("EUR/USD", HOUR_NS, "1.20")])
+    return prices, rates
+
+
+def test_fx_converts_each_point_at_its_own_rate(tmp_path, capsys):
+    px, fx = _fx_fixture(tmp_path)
+    out = tmp_path / "usd.csv"
+    assert main(["fx", px, fx, "--from", "EUR", "--to", "USD",
+                 "--max-age", "1d", "-o", str(out)]) == 0
+    rows = list(csv.DictReader(open(out)))
+    assert [r["value"] for r in rows] == ["110.00", "120.00"]
+
+
+def test_fx_reports_the_move_the_single_rate_would_have_hidden(tmp_path, capsys):
+    px, fx = _fx_fixture(tmp_path)
+    assert main(["fx", px, fx, "--from", "EUR", "--to", "USD",
+                 "--max-age", "1d"]) == 0
+    err = capsys.readouterr().err
+    assert "the rate moved +9.09%" in err
+    assert "did not exist until the end" in err
+
+
+def test_fx_drops_and_counts_what_it_cannot_convert(tmp_path, capsys):
+    px = _series_csv(tmp_path / "px.csv", [(0, "100"), (10**18, "100")])
+    fx = _rates_csv(tmp_path / "fx.csv", [("EUR/USD", 0, "1.10")])
+    assert main(["fx", px, fx, "--from", "EUR", "--to", "USD",
+                 "--max-age", "1h"]) == 0
+    err = capsys.readouterr().err
+    assert "no usable rate       1" in err
+    assert "dropped rather than converted against an older one" in err
+
+
+def test_fx_says_when_it_used_a_rate_upside_down(tmp_path, capsys):
+    px, fx = _fx_fixture(tmp_path)
+    assert main(["fx", px, fx, "--from", "USD", "--to", "EUR",
+                 "--max-age", "1d"]) == 0
+    assert "upside-down" in capsys.readouterr().err
+
+
+def test_fx_can_be_told_not_to_invert(tmp_path, capsys):
+    px, fx = _fx_fixture(tmp_path)
+    assert main(["fx", px, fx, "--from", "USD", "--to", "EUR",
+                 "--max-age", "1d", "--no-inverse"]) == 1
+    assert "state a vehicle currency" in capsys.readouterr().err
+
+
+def test_fx_refuses_a_cross_without_a_vehicle(tmp_path, capsys):
+    px = _series_csv(tmp_path / "px.csv", [(0, "100")])
+    fx = _rates_csv(tmp_path / "fx.csv",
+                    [("EUR/USD", 0, "1.10"), ("USD/JPY", 0, "150")])
+    assert main(["fx", px, fx, "--from", "EUR", "--to", "JPY",
+                 "--max-age", "1d"]) == 1
+    assert "state a vehicle currency" in capsys.readouterr().err
+
+
+def test_fx_crosses_when_the_vehicle_is_stated(tmp_path, capsys):
+    px = _series_csv(tmp_path / "px.csv", [(0, "100")])
+    fx = _rates_csv(tmp_path / "fx.csv",
+                    [("EUR/USD", 0, "1.10"), ("USD/JPY", 0, "150")])
+    out = tmp_path / "jpy.csv"
+    assert main(["fx", px, fx, "--from", "EUR", "--to", "JPY",
+                 "--max-age", "1d", "--via", "USD", "-o", str(out)]) == 0
+    rows = list(csv.DictReader(open(out)))
+    assert rows[0]["value"] == "16500.00"
+    assert "both legs' spreads" in capsys.readouterr().err
+
+
+def test_fx_requires_a_max_age(tmp_path, capsys):
+    px, fx = _fx_fixture(tmp_path)
+    with pytest.raises(SystemExit):
+        main(["fx", px, fx, "--from", "EUR", "--to", "USD"])
+
+
+def test_fx_rejects_an_empty_input(tmp_path, capsys):
+    px = tmp_path / "px.csv"
+    px.write_text("ts_ns,value\n")
+    fx = _rates_csv(tmp_path / "fx.csv", [("EUR/USD", 0, "1.10")])
+    assert main(["fx", str(px), fx, "--from", "EUR", "--to", "USD",
+                 "--max-age", "1h"]) == 1
+    assert "no observations" in capsys.readouterr().err
