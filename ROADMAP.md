@@ -11,7 +11,7 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Thirty-four tagged releases, twenty-one of them published to PyPI (the
+Thirty-five tagged releases, twenty-two of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
 dependencies, Python 3.10+, 983 tests.
 

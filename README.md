@@ -257,10 +257,14 @@ before the first one it was given.
 curiosity; on a tick grid a mid between adjacent ticks is a half-tick every
 single time. `Rounding` has no default and no tie shortcut.
 
-**Round against yourself or you are inventing edge.** `executable` rounds a
-buy down and a sell up. Rounding to the nearest tick instead hands a backtest
-the better side of the grid about half the time, spread evenly across every
-order and attributable to nothing.
+**Round against yourself, or say that you did not.** `executable` rounds a buy
+down and a sell up, so the grid never makes an order more aggressive than the
+strategy asked for. Rounding to the nearest tick does the opposite about half
+the time, which lifts the fill rate in any backtest that fills limit orders at
+their limit. The clearest case is the mid: a market quoted one tick wide has a
+mid exactly half a tick from both sides, so it is not a price the venue could
+ever accept, and filling there understates cost by half the spread on every
+trade.
 
 ```console
 $ mdnorm ticks prices.csv --table ticks.csv

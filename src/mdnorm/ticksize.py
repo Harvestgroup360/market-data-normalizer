@@ -39,11 +39,19 @@ time — so the tie rule is not a footnote, it is a systematic bias with a
 direction. :class:`Rounding` has no default and no tie shortcut:
 :meth:`TickTable.round` must be told what to do.
 
-**Round against yourself or you are inventing edge.** A backtest that rounds
-its target price to the nearest tick gets the better side of the grid half the
-time for free. :meth:`TickTable.executable` rounds a buy down and a sell up —
-away from the fill you wanted — because that is the version that cannot
-flatter a result.
+**Round against yourself, or say that you did not.** Rounding a target to the
+nearest tick moves an order to a price the strategy never asked for, and half
+the time that is the more aggressive side — a buy placed above its own target.
+Where a backtest fills limit orders at their limit, that raises the fill rate
+with nothing in the strategy having asked for it.
+:meth:`TickTable.executable` rounds a buy down and a sell up, so the grid can
+never make an order more aggressive than it was meant to be.
+
+**The clearest case is the mid.** A market quoted one tick wide has a mid that
+is exactly half a tick from both sides, so it is not a price the venue could
+accept — ever, not merely usually. A backtest filling at the mid there is
+assuming a fill at an impossible price and understating its cost by half the
+spread on every trade.
 """
 from __future__ import annotations
 
@@ -212,10 +220,12 @@ class TickTable:
     def executable(self, price: Decimal, side: Side) -> Decimal:
         """Round to a price the venue would take, against the caller.
 
-        A buy rounds down and a sell rounds up, so the rounding never improves
-        the trade. Rounding to the nearest tick instead gives a backtest the
-        better side of the grid about half the time, which is a real gain
-        distributed evenly across every order and attributable to nothing.
+        A buy rounds down and a sell rounds up, so the grid never makes an
+        order more aggressive than the strategy asked for. Rounding to the
+        nearest tick does the opposite about half the time — a buy placed
+        above its own target — which lifts the fill rate in any backtest that
+        fills limit orders at their limit, on no instruction from the
+        strategy.
         """
         if side is Side.BUY:
             return self.round(price, Rounding.DOWN)
