@@ -21,6 +21,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm instruments symbol_map.csv trades.csv -o keyed.csv
     mdnorm calendar us_2026.csv --session 09:30-16:00 --tz America/New_York
     mdnorm fx prices.csv rates.csv --from EUR --to USD --max-age 1m -o usd.csv
+    mdnorm ticks prices.csv --table ticks.csv
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -47,6 +48,7 @@ from .instruments import (SymbolMap, key_by_instrument,
                           read_symbol_map_csv, series_segments)
 from .calendars import read_calendar_csv
 from .fx import convert_series, read_fx_csv
+from .ticksize import Rounding, grid_report, read_tick_table_csv
 from .membership import Basis, read_index_changes_csv, survivorship_gap
 from .reconcile import reconcile, suggest_shift
 from .mixfreq import leak_report, read_periods_csv
@@ -1101,6 +1103,61 @@ def _cmd_membership(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_ticks(args: argparse.Namespace) -> int:
+    import csv as _csv
+
+    table = read_tick_table_csv(args.table)
+    prices = []
+    with open_text(args.input) as fh:
+        for row in _csv.DictReader(fh):
+            prices.append(Decimal(row[args.value_field].strip()))
+    if not prices:
+        print("error: the input has no prices", file=sys.stderr)
+        return 1
+
+    rep = grid_report(prices, table)
+    print(f"prices               {rep.total}", file=sys.stderr)
+    print(f"on the grid          {rep.on_grid}", file=sys.stderr)
+    print(f"off the grid         {rep.off_grid}", file=sys.stderr)
+    if rep.below_table:
+        print(f"below the table      {rep.below_table}", file=sys.stderr)
+    if rep.share_on_grid is not None:
+        print(f"share on grid        {rep.share_on_grid * 100:.2f}%",
+              file=sys.stderr)
+    if rep.worst_offset is not None:
+        print(f"worst offset         {rep.worst_offset} (e.g. {rep.example})",
+              file=sys.stderr)
+
+    if rep.looks_raw is True:
+        print("note: every price sat on the grid, which is what raw prints "
+              "from one venue look like.", file=sys.stderr)
+    elif rep.looks_raw is False:
+        print(f"note: {rep.off_grid} price(s) could not have been quoted on "
+              f"this grid, so this series is not raw prints. In rough order "
+              f"of frequency: a mid or a VWAP rather than a print; a history "
+              f"back-adjusted for splits and dividends; several venues with "
+              f"different grids in one file; or the wrong table for the "
+              f"period.", file=sys.stderr)
+    elif rep.below_table:
+        print("note: nothing could be judged — every price fell below the "
+              "table. Extend the table rather than reading this as a pass.",
+              file=sys.stderr)
+
+    if not args.output:
+        return 0
+    mode = Rounding(args.round)
+    with open(args.output, "w", newline="", encoding="utf-8") as fh:
+        w = _csv.writer(fh)
+        w.writerow([args.value_field, "on_grid", "rounded"])
+        for p in prices:
+            if p < table.floor:
+                w.writerow([p, "", ""])
+                continue
+            w.writerow([p, int(table.on_grid(p)), table.round(p, mode)])
+    print(f"wrote {args.output}", file=sys.stderr)
+    return 0
+
+
 def _cmd_fx(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -1780,6 +1837,26 @@ def build_parser() -> argparse.ArgumentParser:
     p_mb.add_argument("--announced-field", default="announced", metavar="NAME")
     p_mb.add_argument("--name", default="", metavar="NAME")
     p_mb.set_defaults(func=_cmd_membership)
+
+
+    p_tk = sub.add_parser("ticks",
+                          help="check whether a price series sits on a "
+                               "venue's tick grid, which raw prints do and "
+                               "derived series do not")
+    p_tk.add_argument("input", help="CSV with a price column")
+    p_tk.add_argument("--table", required=True,
+                      help="CSV of min_price,tick")
+    p_tk.add_argument("--round", default="down",
+                      choices=[m.value for m in Rounding],
+                      help="rounding rule for the output column; the tie "
+                           "rules differ only on an exact half-tick, which on "
+                           "a grid is every mid (default: down)")
+    p_tk.add_argument("-o", "--output", default=None,
+                      help="write each price with its grid status and its "
+                           "rounded value")
+    p_tk.add_argument("--value-field", default="price", metavar="NAME",
+                      help="price column in the input (default: price)")
+    p_tk.set_defaults(func=_cmd_ticks)
 
 
     p_fx = sub.add_parser("fx",

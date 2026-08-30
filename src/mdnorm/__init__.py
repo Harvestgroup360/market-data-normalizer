@@ -132,6 +132,16 @@ from .fx import (
     decompose_return,
     read_fx_csv,
 )
+from .ticksize import (
+    GridReport,
+    Rounding,
+    TickBand,
+    TickSchedule,
+    TickTable,
+    grid_report,
+    read_tick_table_csv,
+    spread_in_ticks,
+)
 from .book import BookDelta, OrderBook, SequenceGapError, replay_book
 from .features import (
     ReturnMethod,
@@ -208,7 +218,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.22.0"
+__version__ = "1.23.0"
 
 __all__ = [
     "MarketEvent",
@@ -322,6 +332,14 @@ __all__ = [
     "convert_series",
     "decompose_return",
     "read_fx_csv",
+    "GridReport",
+    "Rounding",
+    "TickBand",
+    "TickSchedule",
+    "TickTable",
+    "grid_report",
+    "read_tick_table_csv",
+    "spread_in_ticks",
     "Revision",
     "RevisionSeries",
     "RevisionSummary",

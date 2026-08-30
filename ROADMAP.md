@@ -11,15 +11,15 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Thirty-three tagged releases, twenty of them published to PyPI (the
+Thirty-four tagged releases, twenty-one of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 939 tests.
+dependencies, Python 3.10+, 983 tests.
 
 | Layer | Modules |
 | --- | --- |
 | Ingest | `normalizers`, `csvio`, `jsonl`, `streams`, `records`, `symbols` |
 | Instrument identity | `instruments`, `universe`, `membership` |
-| Cleaning | `quality`, `reconcile` |
+| Cleaning | `quality`, `reconcile`, `ticksize` |
 | Aggregation | `bars`, `sessions`, `calendars`, `adjust`, `fx` |
 | Microstructure | `book`, `consolidate`, `micro` |
 | Execution | `execution` |
@@ -28,8 +28,8 @@ dependencies, Python 3.10+, 939 tests.
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
 Shipped since the last revision of this file: `mixfreq`, `membership`,
-`reconcile`, `calendars` and `fx`. The first two were the items that stood under
-*Under consideration* below; the other three were not on the list. `reconcile` is
+`reconcile`, `calendars`, `fx` and `ticksize`. The first two were the items that stood under
+*Under consideration* below; the other four were not on the list. `reconcile` is
 here because comparing two sources of the same series is the check people run
 before trusting either, and nothing in the library did it. A slow series now carries the
 moment each value became knowable rather than the period it describes, and
@@ -63,6 +63,20 @@ do not. Direction is carried in the type instead of inferred from a pair name,
 and an inversion is recorded in the result rather than performed quietly. No
 path through the currency graph is ever searched for: state the vehicle or the
 cross is refused, because choosing a route is choosing whose spreads you pay.
+
+`ticksize` is the smallest module here and the one that answers a question we
+had not seen asked anywhere: is this file prints, or is it derived numbers?
+A venue only accepts multiples of a tick, so raw prints sit on the grid by
+construction, and a series that does not is a mid, a VWAP, an average across
+venues, a back-adjusted history or an error. One pass tells them apart. The
+module ships no default tick size — the familiar penny is wrong below a
+dollar, wrong for sub-penny programmes, wrong for crypto by orders of
+magnitude and wrong before the last regime change — and tick tables are
+therefore point-in-time data, so `TickSchedule` refuses to answer before the
+first table it was given. Rounding takes no default mode either: on a grid an
+exact half-tick is not an edge case but every mid, so the tie rule is a
+systematic choice with a direction, and `executable` rounds a buy down and a
+sell up so that rounding can never improve a backtested fill.
 
 ## Asked for
 

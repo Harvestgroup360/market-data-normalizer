@@ -222,6 +222,53 @@ would have restated the whole series by a number that did not exist until the
 end of it.
 ```
 
+### Prices live on a grid, and the grid is data
+
+A venue does not accept any price. It accepts multiples of a tick, and the
+tick depends on the price band, the instrument and the year.
+
+```python
+from mdnorm import TickTable, TickBand, grid_report, spread_in_ticks
+
+table = TickTable([TickBand(D("0"), D("0.0001")),
+                   TickBand(D("1"), D("0.01"))])
+grid_report(prices, table).looks_raw      # could the venue have quoted these?
+spread_in_ticks(bid, ask, table)          # 1.0 is the floor, not a tight market
+```
+
+**A price off the grid is telling you something.** Raw prints sit on the grid
+by construction — the venue would not have accepted them otherwise. So a
+series that does not is a mid, a VWAP, an average of venues, a back-adjusted
+history, or an error, and those are indistinguishable by eye. `grid_report` is
+one pass over the data and answers a question most pipelines never ask.
+
+**Back-adjustment takes a series off the grid permanently, and that is
+correct.** An adjusted history is a returns object, not a price object. It
+stops being correct when someone rounds it back on to make it look tidy. The
+grid is the cheapest way to tell the two apart after the fact.
+
+**There is no default tick size.** The familiar penny is wrong below a dollar
+on most venues, wrong for sub-penny programmes, wrong for crypto by orders of
+magnitude, and wrong for the same instrument before the last regime change —
+so tick tables are point-in-time data, and `TickSchedule` refuses to answer
+before the first one it was given.
+
+**Ties are not an edge case here.** On a continuous scale an exact half is a
+curiosity; on a tick grid a mid between adjacent ticks is a half-tick every
+single time. `Rounding` has no default and no tie shortcut.
+
+**Round against yourself or you are inventing edge.** `executable` rounds a
+buy down and a sell up. Rounding to the nearest tick instead hands a backtest
+the better side of the grid about half the time, spread evenly across every
+order and attributable to nothing.
+
+```console
+$ mdnorm ticks prices.csv --table ticks.csv
+off the grid         2
+note: 2 price(s) could not have been quoted on this grid, so this series is
+not raw prints.
+```
+
 ### Corporate actions and contract rolls
 
 A raw price series is not continuous. A 4-for-1 split divides the printed
@@ -1023,6 +1070,7 @@ $ mdnorm costs pnl.csv --cost-bps 5 --edge-bps 20 --adv 1e6 --volatility 0.02
 $ mdnorm instruments symbol_map.csv trades.csv -o keyed.csv
 $ mdnorm calendar us_2026.csv --session 09:30-16:00 --tz America/New_York
 $ mdnorm fx prices.csv rates.csv --from EUR --to USD --max-age 1m -o usd.csv
+$ mdnorm ticks prices.csv --table ticks.csv
 ```
 
 Also available as `python -m mdnorm`.
@@ -1087,6 +1135,7 @@ raw feed ──► normalizer ─────────────► MarketE
                     ├── adjust.adjust_events()       splits/divs/rolls
                     ├── TradingCalendar.is_open()    the holidays and half-days
                     ├── FxRates.convert()            a price in another currency
+                    ├── grid_report()                is this a print or a derived number
                     ├── micro.infer_sides()          who crossed the spread
                     ├── book.OrderBook()             deltas → live book → quotes
                     ├── consolidate()                many venues → one best bid/offer

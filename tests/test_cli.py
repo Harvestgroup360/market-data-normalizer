@@ -849,3 +849,74 @@ def test_fx_rejects_an_empty_input(tmp_path, capsys):
     assert main(["fx", str(px), fx, "--from", "EUR", "--to", "USD",
                  "--max-age", "1h"]) == 1
     assert "no observations" in capsys.readouterr().err
+
+
+# -- ticks ------------------------------------------------------------------
+
+
+def _prices_csv(path, values):
+    path.write_text("price\n" + "".join(f"{v}\n" for v in values))
+    return str(path)
+
+
+def _table_csv(path, rows=(("0", "0.0001"), ("1", "0.01"))):
+    path.write_text("min_price,tick\n" + "".join(f"{a},{b}\n" for a, b in rows))
+    return str(path)
+
+
+def test_ticks_recognises_raw_prints(tmp_path, capsys):
+    px = _prices_csv(tmp_path / "p.csv", ["42.30", "42.31", "42.29"])
+    tb = _table_csv(tmp_path / "t.csv")
+    assert main(["ticks", px, "--table", tb]) == 0
+    err = capsys.readouterr().err
+    assert "on the grid          3" in err
+    assert "what raw prints" in err or "raw prints from one venue" in err
+
+
+def test_ticks_flags_a_derived_series(tmp_path, capsys):
+    px = _prices_csv(tmp_path / "p.csv", ["166.6666", "167.3333"])
+    tb = _table_csv(tmp_path / "t.csv")
+    assert main(["ticks", px, "--table", tb]) == 0
+    err = capsys.readouterr().err
+    assert "off the grid         2" in err
+    assert "back-adjusted" in err
+
+
+def test_ticks_writes_the_status_and_the_rounded_price(tmp_path):
+    px = _prices_csv(tmp_path / "p.csv", ["42.305"])
+    tb = _table_csv(tmp_path / "t.csv")
+    out = tmp_path / "g.csv"
+    assert main(["ticks", px, "--table", tb, "-o", str(out),
+                 "--round", "nearest_up"]) == 0
+    row = list(csv.DictReader(open(out)))[0]
+    assert row["on_grid"] == "0" and row["rounded"] == "42.31"
+
+
+def test_ticks_rounds_down_by_default(tmp_path):
+    px = _prices_csv(tmp_path / "p.csv", ["42.305"])
+    tb = _table_csv(tmp_path / "t.csv")
+    out = tmp_path / "g.csv"
+    assert main(["ticks", px, "--table", tb, "-o", str(out)]) == 0
+    assert list(csv.DictReader(open(out)))[0]["rounded"] == "42.30"
+
+
+def test_ticks_counts_prices_below_the_table_apart(tmp_path, capsys):
+    px = _prices_csv(tmp_path / "p.csv", ["0.5", "42.30"])
+    tb = _table_csv(tmp_path / "t.csv", (("1", "0.01"),))
+    assert main(["ticks", px, "--table", tb]) == 0
+    assert "below the table      1" in capsys.readouterr().err
+
+
+def test_ticks_does_not_call_an_unjudgeable_file_clean(tmp_path, capsys):
+    px = _prices_csv(tmp_path / "p.csv", ["0.5"])
+    tb = _table_csv(tmp_path / "t.csv", (("1", "0.01"),))
+    assert main(["ticks", px, "--table", tb]) == 0
+    assert "nothing could be judged" in capsys.readouterr().err
+
+
+def test_ticks_rejects_an_empty_input(tmp_path, capsys):
+    px = tmp_path / "p.csv"
+    px.write_text("price\n")
+    tb = _table_csv(tmp_path / "t.csv")
+    assert main(["ticks", str(px), "--table", tb]) == 1
+    assert "no prices" in capsys.readouterr().err
