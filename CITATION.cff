@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+title: market-data-normalizer
+abstract: >-
+  A pure-Python library that normalizes heterogeneous market-data feeds
+  into one exchange-agnostic event schema, and computes research features
+  that cannot see the future. Exact decimal prices, integer nanosecond
+  timestamps, no runtime dependencies.
+message: If you use this software in published work, please cite it.
+type: software
+authors:
+  - name: HarvestGroup360
+    website: https://harvestgroup360.com
+repository-code: https://github.com/Harvestgroup360/market-data-normalizer
+url: https://harvestgroup360.com
+license: MIT
+keywords:
+  - market data
+  - quantitative finance
+  - look-ahead bias
+  - point-in-time data
+  - tick data

@@ -1,0 +1,43 @@
+name: A wrong answer
+description: The library returned a number you can show is wrong.
+labels: ["correctness"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the most valuable kind of issue we get. It does not need to be
+        polished — an input and an expectation is enough.
+  - type: textarea
+    id: input
+    attributes:
+      label: The input
+      description: >
+        The smallest data that reproduces it. A few rows inline is ideal; a
+        file is fine. If the data is not yours to share, a synthetic series
+        with the same shape usually reproduces it.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: code
+    attributes:
+      label: What you called
+      render: python
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you got, and what you expected
+      description: >
+        Both, please, and say briefly why the expected one is right. "Why" is
+        the part that decides whether this is a bug or a documented refusal.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: "1.25.0 (python -c 'import mdnorm; print(mdnorm.__version__)')"
+    validations:
+      required: true

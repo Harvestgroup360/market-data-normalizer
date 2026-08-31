@@ -1169,6 +1169,16 @@ raw feed ──► normalizer ─────────────► MarketE
                     └── capacity()                   the size at which the edge runs out
 ```
 
+## Examples
+
+Three runnable scripts in [`examples/`](examples), standard library only:
+
+| | |
+| --- | --- |
+| [`demo.py`](examples/demo.py) | one trade in CSV, WebSocket JSON and FIX collapsing to the same event |
+| [`is_this_file_real.py`](examples/is_this_file_real.py) | prints against mids, VWAPs and an adjusted history, on the tick grid |
+| [`nothing_looks_forward.py`](examples/nothing_looks_forward.py) | edit the tail of a series; a trailing z-score does not move, a full-sample one moves everywhere |
+
 ## Tests
 
 ```bash
@@ -1180,6 +1190,13 @@ The suite includes a cross-venue equivalence test proving CSV, WebSocket and
 FIX representations of one trade collapse to an identical event, and a
 causality property applied across the feature layer: change the tail of an
 input, and every output before the change must be byte-identical.
+
+CI also runs `mypy` in a reporting-only job. The package is annotated but does
+**not** ship a PEP 561 `py.typed` marker: the annotations do not yet express
+every invariant the code enforces at runtime, and shipping the marker would
+push those errors into your type-checking rather than ours. The count is
+printed on every run so it can be watched going down. See
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

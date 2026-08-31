@@ -1,0 +1,36 @@
+name: A proposal
+description: Something the library should do and does not.
+labels: ["proposal"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before writing: `ROADMAP.md` has a section headed **Decided against**
+        with the reason beside each entry. If your idea is on it, the useful
+        move is to attack the reason rather than restate the request — that
+        has worked before.
+  - type: textarea
+    id: error
+    attributes:
+      label: What goes wrong today
+      description: >
+        Every module here exists because there is a way for a pipeline to
+        produce a number that is wrong in a direction that flatters it. If your
+        proposal fixes one of those, describe it. If it is a convenience,
+        say so plainly — that is a fair thing to ask for, it is just judged
+        differently.
+    validations:
+      required: true
+  - type: textarea
+    id: shape
+    attributes:
+      label: What the call would look like
+      render: python
+  - type: textarea
+    id: unstated
+    attributes:
+      label: What it would have to assume
+      description: >
+        The question we will ask anyway. If the feature needs a constant, a
+        default window, a tolerance or a calendar, name it here — that is
+        usually where the design decision actually is.

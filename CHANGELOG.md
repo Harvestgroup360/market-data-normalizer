@@ -3,6 +3,160 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.25.0] - 2026-08-31
+
+### Removed
+- The `Typing :: Typed` classifier, which was not true. The package is
+  annotated, but it never shipped the PEP 561 `py.typed` marker a type checker
+  needs, so the classifier promised something no dependent could actually use.
+  Running `mypy` against the package reports **76 errors in 11 files**, nearly
+  all of them places where an invariant the code enforces at runtime is not
+  expressed in the types. Shipping the marker would have pushed those errors
+  into everyone else's type-checking.
+
+### Added
+- A reporting-only `types` job in CI that prints the `mypy` count on every run.
+  It does not fail the build: the point is to make the number visible so it can
+  be watched going down. Earning the classifier back is a roadmap item.
+- `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, issue templates for a
+  wrong answer and for a proposal, a pull-request template, and `CITATION.cff`.
+  The issue templates ask the two questions that decide most of these: what
+  input reproduces it, and what would the feature have to assume.
+
+## [1.24.0] - 2026-08-31
+
+### Added
+- `rolling_sum`: the trailing sum, the primitive underneath `rolling_mean` and
+  useful on its own for trailing volume, turnover and trade counts.
+
+### Changed
+- The trailing sum is slid instead of recomputed, on every step where sliding
+  it is provably exact. `BENCHMARKS.md` said in 1.17.0 that we would not do
+  this, because a running `Decimal` total accumulates a different rounding
+  history than a fresh sum and a library claiming reproducible numbers cannot
+  have a statistic that depends on where the window sits. That objection was
+  right about the rounding and wrong that it settled the question: `Decimal`
+  raises an `Inexact` flag on exactly the operations that round, so every
+  update runs with the flag cleared and is discarded the moment it would.
+  `rolling_mean` over 200,000 points: window 60 from 843 ms to 143 ms, window
+  250 from 3,016 ms to 140 ms. The window has left the cost function.
+- On ordinary data every output is unchanged. Where one changes, it is because
+  summing a window forwards rounded an intermediate partial the slid total
+  never held, and there the slid total is the exact sum. Verified against
+  `Fraction` rather than asserted: the property tested is that the slid answer
+  is never further from the true sum than the recomputed one.
+- The variance pass inside `rolling_std` and `rolling_zscore` is deliberately
+  not slid; the identity that would allow it is a different sequence of
+  roundings. This is why `rolling_zscore` barely moved.
+
+## [1.23.1] - 2026-08-30
+
+### Fixed
+- Documentation only. The 1.23.0 text claimed that rounding a target to the
+  nearest tick hands a backtest "a real gain distributed evenly across every
+  order". That is stronger than the argument supports — nearest-rounding is
+  symmetric, so on a symmetric target it is a wash in expectation. What is
+  true and narrower: it moves an order to a price the strategy never asked
+  for, and half the time that is the more aggressive side, which lifts the
+  fill rate wherever a backtest fills limit orders at their limit. The
+  unarguable case is the mid: a market quoted one tick wide has a mid exactly
+  half a tick from both sides, so it is not a price the venue could accept.
+
+## [1.23.0] - 2026-08-30
+
+### Added
+- `ticksize`: the price grid a venue actually accepts. `TickBand`,
+  `TickTable`, `TickSchedule`, `Rounding`, `GridReport`, `grid_report`,
+  `spread_in_ticks`, `read_tick_table_csv`, and the `mdnorm ticks` command.
+- The diagnostic this buys: raw prints sit on the grid by construction, so a
+  series that does not is a mid, a VWAP, an average across venues, a
+  back-adjusted history, or an error. One pass over the file tells them apart.
+- No default tick size. The familiar penny is wrong below a dollar, wrong for
+  sub-penny programmes, wrong for crypto by orders of magnitude and wrong for
+  the same instrument before the last regime revision, so a tick table is
+  point-in-time data and `TickSchedule` refuses to answer before its first one.
+- Rounding takes no default mode. On a grid an exact half-tick is not an edge
+  case but every mid, so the tie rule is a systematic choice with a direction.
+  `executable` rounds a buy down and a sell up.
+
+## [1.22.0] - 2026-08-29
+
+### Added
+- `fx`: currency conversion as of the moment rather than as of the end.
+  `CurrencyPair`, `Quote`, `Conversion`, `FxRates`, `ReturnDecomposition`,
+  `convert_series`, `convert_bars`, `decompose_return`, `read_fx_csv`, and the
+  `mdnorm fx` command.
+- No function takes a scalar rate. One rate applied to a whole history
+  restates it with a number that did not exist until the end of it.
+- `max_age_ns` is required rather than defaulted: FX stops over weekends while
+  other venues keep trading, so an as-of join with no age limit converts a
+  Sunday print with Friday's close and the result looks fresh.
+- Direction lives in `CurrencyPair` rather than in a naming convention, and an
+  inversion is recorded in the result. No path through the currency graph is
+  searched for — state the vehicle with `via=` or the cross is refused.
+- `decompose_return` gives the exact identity and the additive shorthand side
+  by side, so the dropped cross term is a number rather than a footnote.
+
+## [1.21.0] - 2026-08-29
+
+### Added
+- `calendars`: holidays, half-days, and the year that is not 252 sessions.
+  `Holiday`, `EarlyClose`, `TradingCalendar`, `CalendarReport`,
+  `read_calendar_csv`, and the `mdnorm calendar` command.
+- A calendar refuses to answer for a date its source file never covered.
+  Treating an unknown weekday as open converts a missing file into a confident
+  wrong answer on exactly the dates most likely to be unusual.
+- `trading_seconds_between` counts what the venue was actually open, which is
+  not sessions times session length once the range contains an early close.
+- The command prints the `--sessions-per-year` and `--session-length` that
+  `mdnorm features` wants, so the annualisation constant this project refuses
+  to ship as a default is computed from a file instead of remembered.
+
+## [1.20.0] - 2026-08-28
+
+### Added
+- `reconcile`: comparing two sources that claim to describe the same series.
+  `MismatchKind`, `Mismatch`, `ReconcileReport`, `ShiftSuggestion`,
+  `reconcile`, `reconcile_bars`, `suggest_shift`, and the `mdnorm reconcile`
+  command.
+- Coverage gaps are counted apart from value differences and never added
+  together, because they have different causes and different fixes. Agreement
+  is computed over shared timestamps only, so a feed that carries less does
+  not look like a feed that lies.
+- No default tolerance. Called with none, values must match exactly.
+- Zero overlap is diagnosed as a clock offset rather than a disagreement:
+  `suggest_shift` reports the constant offset and how much of the sample it
+  would explain, and does not apply it.
+
+## [1.19.0] - 2026-08-27
+
+### Added
+- `membership`: who was in an index, and when they were told. `Basis`,
+  `ChangeKind`, `IndexChange`, `IndexSnapshot`, `InferredChange`,
+  `MembershipHistory`, `MembershipReport`, `survivorship_gap`,
+  `read_index_changes_csv`, and the `mdnorm membership` command.
+- Announcement and effective dates are kept apart and `Basis` has no default,
+  because they answer different questions and a study can rank on one while
+  trading the effect of the other.
+- `from_snapshots` dates an inferred change at the later snapshot and records
+  the width of the window, rather than picking a date inside a window the data
+  only bounds.
+- `survivorship_gap` measures the error in both directions: a today-list drops
+  the names that left and holds the names that joined from before they joined.
+
+## [1.18.0] - 2026-08-26
+
+### Added
+- `mixfreq`: a daily number on an intraday grid. `Period`, `PeriodSeries`,
+  `LeakReport`, `leak_report`, `read_periods_csv`, and the `mdnorm mixfreq`
+  command.
+- A period series carries the moment each value became knowable rather than
+  the period it describes. `knowable_series()` is safe; `labelled_series()`
+  leaks and is kept deliberately so the difference can be measured.
+- The result worth stating: on back-to-back periods every grid point leaks,
+  not most of them, because each period's label is the previous period's close.
+- `publication_lag_ns` is a second, separate delay with no default value.
+
 ## [1.17.0] - 2026-08-25
 
 ### Added
