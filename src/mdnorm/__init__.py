@@ -152,6 +152,7 @@ from .features import (
     rolling_correlation,
     rolling_mean,
     rolling_std,
+    rolling_sum,
     rolling_zscore,
     timestamps,
 )
@@ -218,7 +219,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.23.1"
+__version__ = "1.24.0"
 
 __all__ = [
     "MarketEvent",
@@ -250,6 +251,7 @@ __all__ = [
     "timestamps",
     "returns",
     "rolling_mean",
+    "rolling_sum",
     "rolling_std",
     "rolling_zscore",
     "rolling_correlation",

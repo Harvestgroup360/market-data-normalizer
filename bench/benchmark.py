@@ -38,6 +38,8 @@ from mdnorm import (  # noqa: E402
     align,
     from_csv_row,
     returns,
+    rolling_mean,
+    rolling_sum,
     rolling_zscore,
     sharpe_report,
     time_bars,
@@ -149,9 +151,17 @@ def run(scale: int) -> Report:
     n = 200_000 * scale
     px = decimals(n)
     rep.add("returns", "point", n, measure(lambda: returns(px)))
+    rep.add("rolling sum, window 60", "point", n,
+            measure(lambda: rolling_sum(px, 60), repeats=3),
+            "the total is slid, and recomputed only where sliding would round")
+    rep.add("rolling mean, window 60", "point", n,
+            measure(lambda: rolling_mean(px, 60), repeats=3))
+    rep.add("rolling mean, window 250", "point", n,
+            measure(lambda: rolling_mean(px, 250), repeats=3),
+            "same cost as window 60: the sum no longer depends on the window")
     rep.add("rolling z-score, window 60", "point", n,
             measure(lambda: rolling_zscore(px, 60), repeats=3),
-            "trailing mean and standard deviation at 34-digit precision")
+            "the mean is slid; the variance pass is not, and it dominates")
 
     # 5. evaluation ---------------------------------------------------------
     n = 100_000 * scale

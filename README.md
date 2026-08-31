@@ -554,6 +554,7 @@ px  = column(rows, "BTC")
 r   = returns(px, method=ReturnMethod.LOG)
 z   = rolling_zscore(px, window=60)          # trailing, never full-sample
 vol = realized_volatility(r, window=60)      # per period until you annualise it
+qty = rolling_sum(volumes, window=60)        # O(n), not O(n x window)
 ```
 
 **A full-sample z-score is look-ahead.** Subtracting the mean and dividing by
@@ -580,6 +581,21 @@ returns per-period volatility unless you pass a factor, and `periods_per_year`
 makes you state the calendar rather than assume one — the same minute bars are
 525,600 periods a year on a continuous venue and 98,280 on a cash equity
 session.
+
+**The trailing sum is slid, and only where sliding is exact.** `rolling_sum`
+and `rolling_mean` no longer resum the window at every index, which took them
+from O(n × window) to O(n) — window 250 now costs the same as window 60, 21×
+faster than before. The reason libraries avoid this is drift: a running
+`Decimal` total rounds differently from a fresh sum. That rounding is
+observable, so every update runs with the `Inexact` flag cleared and is thrown
+away the moment it would round, falling back to a full sum of the window. On
+ordinary data every output is unchanged; where one does change it is because
+the forward recomputation rounded an intermediate partial and the slid total
+did not, and the test suite checks against rational arithmetic that the slid
+answer is the exact one. The variance pass inside `rolling_std` and
+`rolling_zscore` is deliberately *not* slid — the identity that would allow it
+is a different sequence of roundings, and that is a trade we decline.
+[BENCHMARKS.md](BENCHMARKS.md) has the numbers and the argument.
 
 ```console
 $ mdnorm features matrix.csv --returns log --zscore 60 --vol 60 \

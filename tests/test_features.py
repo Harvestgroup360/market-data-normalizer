@@ -1,5 +1,7 @@
 """Feature tests: causality, partial windows, gaps, and the annualisation trap."""
-from decimal import Decimal
+import random
+from decimal import Decimal, Inexact, localcontext
+from fractions import Fraction
 
 import pytest
 
@@ -15,6 +17,7 @@ from mdnorm import (
     rolling_correlation,
     rolling_mean,
     rolling_std,
+    rolling_sum,
     rolling_zscore,
     timestamps,
 )
@@ -403,3 +406,148 @@ def test_zscore_still_rejects_a_bad_ddof():
 def test_zscore_of_a_frozen_window_is_none_not_zero():
     vals = [D(5), D(5), D(5), D(5)]
     assert rolling_zscore(vals, 3) == [None, None, None, None]
+
+
+# -- the sliding sum, and the promise that it changes nothing ---------------
+
+
+def _naive_sum(values, window):
+    """What this module did before the sum was slid: recompute every window."""
+    out = []
+    last_gap = -1
+    with localcontext() as ctx:
+        ctx.prec = 34
+        for i in range(len(values)):
+            if values[i] is None:
+                last_gap = i
+            if i + 1 < window:
+                out.append(None)
+                continue
+            start = i - window + 1
+            out.append(None if last_gap >= start
+                       else sum(values[start:i + 1], Decimal(0)))
+    return out
+
+
+def _naive_mean(values, window):
+    return [None if s is None else _div(s, window)
+            for s in _naive_sum(values, window)]
+
+
+def _div(a, b):
+    with localcontext() as ctx:
+        ctx.prec = 34
+        return a / b
+
+
+#: Fixed per kind, because hash() of a str is salted per process and a
+#: fixture that changes between runs is not a fixture.
+_SEEDS = {"plain": 100, "gaps": 200, "magnitudes": 300, "digits": 400}
+
+
+def _series(n, seed, *, gaps=0.0, magnitudes=False, digits=0):
+    rng = random.Random(seed)
+    out = []
+    for _ in range(n):
+        if gaps and rng.random() < gaps:
+            out.append(None)
+        elif digits:
+            out.append(Decimal("1." + "".join(rng.choice("0123456789")
+                                              for _ in range(digits))))
+        elif magnitudes:
+            out.append(Decimal(str(rng.choice([1e25, 1e-8, -1e25, 3.14159]))))
+        else:
+            out.append(Decimal(str(round(100 + rng.gauss(0, 1), 4))))
+    return out
+
+
+@pytest.mark.parametrize("window", [2, 3, 20, 60])
+@pytest.mark.parametrize("kind", ["plain", "gaps", "magnitudes", "digits"])
+def test_the_slid_sum_is_never_further_from_the_truth(window, kind):
+    """Against exact rational arithmetic, sliding is never the worse answer.
+
+    On ordinary data the two agree exactly. Where they disagree it is because
+    the recomputed sum rounded an intermediate partial that the slid total
+    never held, and in that case the slid total is the correct one.
+    """
+    kw = {"gaps": 0.03} if kind == "gaps" else \
+         {"magnitudes": True} if kind == "magnitudes" else \
+         {"digits": 33} if kind == "digits" else {}
+    values = _series(400, seed=_SEEDS[kind] + window, **kw)
+    slid = rolling_sum(values, window)
+    naive = _naive_sum(values, window)
+    assert len(slid) == len(naive) == len(values)
+    for i, (a, b) in enumerate(zip(slid, naive)):
+        if a is None or b is None:
+            assert a is None and b is None
+            continue
+        truth = sum((Fraction(str(v)) for v in values[i - window + 1:i + 1]),
+                    Fraction(0))
+        assert abs(Fraction(str(a)) - truth) <= abs(Fraction(str(b)) - truth)
+
+
+@pytest.mark.parametrize("window", [2, 20, 60])
+def test_on_ordinary_prices_nothing_changed_at_all(window):
+    """The case every user is in: identical, value for value."""
+    values = _series(400, seed=window, gaps=0.03)
+    assert rolling_sum(values, window) == _naive_sum(values, window)
+    assert rolling_mean(values, window) == _naive_mean(values, window)
+
+
+def test_where_the_two_differ_the_slid_total_is_the_exact_one():
+    """A window holding both 1e25 and 3.14159 rounds when summed forwards."""
+    values = _series(400, seed=0, magnitudes=True)
+    slid, naive = rolling_sum(values, 60), _naive_sum(values, 60)
+    differing = [i for i, (a, b) in enumerate(zip(slid, naive)) if a != b]
+    assert differing, "this fixture is meant to produce a disagreement"
+    for i in differing:
+        truth = sum((Fraction(str(v)) for v in values[i - 59:i + 1]),
+                    Fraction(0))
+        assert Fraction(str(slid[i])) == truth
+        assert Fraction(str(naive[i])) != truth
+
+
+def test_the_fallback_actually_fires_and_is_still_exact():
+    """Values wide enough that sliding the total would round."""
+    values = _series(400, seed=7, digits=33)
+    slid = rolling_sum(values, 25)
+    assert slid == _naive_sum(values, 25)
+    fell_back = False
+    with localcontext() as ctx:
+        ctx.prec = 34
+        for i in range(25, len(values)):
+            ctx.flags[Inexact] = False
+            _ = sum(values[i - 24:i + 1], Decimal(0))
+            if ctx.flags[Inexact]:
+                fell_back = True
+                break
+    assert fell_back, "this fixture is meant to force the fallback"
+
+
+def test_the_same_series_gives_the_same_answer_twice():
+    values = _series(300, seed=11)
+    assert rolling_sum(values, 30) == rolling_sum(values, 30)
+    assert rolling_zscore(values, 30) == rolling_zscore(values, 30)
+
+
+def test_a_gap_resets_the_running_total_rather_than_carrying_it():
+    values = [Decimal(i) for i in range(10)]
+    values[4] = None
+    got = rolling_sum(values, 3)
+    assert got[3] == Decimal(1 + 2 + 3)        # the gap is still ahead
+    assert got[4] is None and got[5] is None and got[6] is None
+    assert got[7] == Decimal(5 + 6 + 7)        # first clean window after it
+    assert got[8] == Decimal(6 + 7 + 8)
+
+
+def test_rolling_sum_rejects_a_useless_window():
+    with pytest.raises(ValueError):
+        rolling_sum([Decimal(1)], 0)
+
+
+def test_rolling_sum_on_a_short_series_is_all_none():
+    assert rolling_sum([Decimal(1), Decimal(2)], 5) == [None, None]
+
+
+def test_rolling_sum_of_an_empty_series():
+    assert rolling_sum([], 3) == []

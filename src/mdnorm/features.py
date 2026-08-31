@@ -37,12 +37,22 @@ instrument that trades around the clock. :func:`periods_per_year` makes you
 state the session length and the number of sessions, and
 :func:`realized_volatility` returns per-period volatility unless you supply one.
 
+**The rolling sum is slid, and only where sliding is exact.** Recomputing a
+window at every index is what made these functions cost O(n x window); adding
+the arriving value and subtracting the departing one is O(n). The usual reason
+not to do it is drift, so each update runs with the ``Inexact`` flag cleared
+and is discarded the moment it would round, falling back to a full sum of the
+window. On ordinary data the results are identical; where they differ it is
+because the forward recomputation rounded an intermediate partial and the slid
+total did not, and the slid total is the exact one.
+
 Nothing here forecasts, ranks, or scores. These are descriptive statistics with
 their window written down.
 """
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation, localcontext
+from decimal import (Decimal, Inexact, InvalidOperation, getcontext,
+                     localcontext)
 from enum import Enum
 from typing import List, Optional, Sequence
 
@@ -53,6 +63,7 @@ __all__ = [
     "column",
     "timestamps",
     "returns",
+    "rolling_sum",
     "rolling_mean",
     "rolling_std",
     "rolling_zscore",
@@ -68,6 +79,10 @@ _Series = Sequence[Optional[Decimal]]
 _PRECISION = 34
 
 _ZERO = Decimal(0)
+
+#: Placeholder yielded in place of the window values when the caller does not
+#: need them; slicing the window is most of the cost of a rolling sum.
+_PRESENT = ()
 
 
 # -- getting a series out of an aligned matrix -------------------------------
@@ -146,40 +161,100 @@ def _check_window(window: int, minimum: int = 1) -> None:
         raise ValueError(f"window must be at least {minimum}")
 
 
-def _windows(values: _Series, window: int):
-    """Yield ``(index, window_values_or_None)`` for every index.
+def _windows_with_sum(values: _Series, window: int, *,
+                      need_values: bool = True):
+    """Yield ``(index, window_values, trailing_sum)`` for every index.
 
-    ``None`` for an index whose window is incomplete — either because the
-    series has not produced ``window`` observations yet, or because one of them
-    is missing.
+    ``(None, None)`` for an index whose window is incomplete — either because
+    the series has not produced ``window`` observations yet, or because one of
+    them is missing. The gap check is carried rather than rescanned:
+    remembering where the most recent hole was makes it one comparison per
+    index instead of a sweep of the whole window.
 
-    The gap check is carried rather than rescanned: remembering where the most
-    recent hole was makes it one comparison per index instead of a sweep of the
-    whole window. The values yielded are unchanged, and so is every number
-    computed from them.
+    A rolling sum recomputed from scratch at every index is the whole reason
+    these functions cost O(n x window). Sliding it — add the arriving value,
+    subtract the departing one — is O(n), and the usual objection is that it
+    drifts: a running total accumulates rounding a fresh sum does not, so the
+    same window stops giving the same answer twice.
+
+    That objection is about rounding, and rounding is observable. Each update
+    runs with the ``Inexact`` flag cleared; if the flag is raised the update is
+    discarded and the window is summed from scratch. The slid total is
+    therefore used only on the steps where it is provably the exact sum.
+
+    On ordinary price data the two agree value for value. They can disagree,
+    and it is worth being exact about which way: summing a window forwards can
+    round an intermediate partial that the slid total never holds — a window
+    containing both 1e25 and 3.14159 is enough — and in that case the slid
+    total is the correct one and the recomputed one has lost a digit. So this
+    is a correctness improvement that shows up as a changed value on series
+    mixing very large and very small magnitudes, and as no change at all
+    everywhere else.
     """
     last_gap = -1
+    running: Optional[Decimal] = None
+    trust = True
+    flags = getcontext().flags
     for i in range(len(values)):
         if values[i] is None:
             last_gap = i
         if i + 1 < window:
-            yield i, None
+            yield i, None, None
             continue
         start = i - window + 1
-        yield i, (None if last_gap >= start else list(values[start:i + 1]))
+        if last_gap >= start:
+            running = None
+            yield i, None, None
+            continue
+        chunk = list(values[start:i + 1]) if need_values else _PRESENT
+        if running is None or not trust:
+            flags[Inexact] = False
+            running = sum(values[start:i + 1], _ZERO)
+            trust = not flags[Inexact]
+        else:
+            flags[Inexact] = False
+            candidate = running + values[i] - values[start - 1]
+            if flags[Inexact]:
+                flags[Inexact] = False
+                running = sum(values[start:i + 1], _ZERO)
+                trust = not flags[Inexact]
+            else:
+                running = candidate
+        yield i, chunk, running
 
 
-def _mean_and_std(chunk: List[Decimal], window: int, ddof: int):
-    """Both statistics from one pass over the window.
+def _mean_and_std(chunk: List[Decimal], total: Decimal, window: int,
+                  ddof: int):
+    """Both statistics, given the window and its already-computed sum.
 
-    The mean is computed once and handed to the variance, which is the same
-    two-pass computation as before in the same order — not an incremental
-    update. Running sums would be faster still and would not give the same
-    answer twice in a row, which is a trade this library does not make.
+    The variance is still a second pass over the window in the original order.
+    It cannot be slid the way the sum can: the identity that would let it —
+    subtracting the square of the mean from the mean of the squares — is exact
+    in algebra and a different sequence of roundings in arithmetic, so it would
+    change published numbers to save time. The sum is slid because sliding it
+    changes nothing.
     """
-    mean = sum(chunk, _ZERO) / window
+    mean = total / window
     var = sum(((v - mean) ** 2 for v in chunk), _ZERO) / (window - ddof)
     return mean, var.sqrt()
+
+
+def rolling_sum(values: _Series, window: int) -> List[Optional[Decimal]]:
+    """Trailing sum over ``window`` observations.
+
+    The primitive under the mean, and useful on its own for trailing volume,
+    turnover or trade counts. Linear in the length of the series: the total is
+    slid rather than recomputed, on every step where sliding it is provably
+    exact, and recomputed on the steps where it is not.
+    """
+    _check_window(window)
+    out: List[Optional[Decimal]] = []
+    with localcontext() as ctx:
+        ctx.prec = _PRECISION
+        for _, _chunk, total in _windows_with_sum(values, window,
+                                                  need_values=False):
+            out.append(total)
+    return out
 
 
 def rolling_mean(values: _Series, window: int) -> List[Optional[Decimal]]:
@@ -188,9 +263,9 @@ def rolling_mean(values: _Series, window: int) -> List[Optional[Decimal]]:
     out: List[Optional[Decimal]] = []
     with localcontext() as ctx:
         ctx.prec = _PRECISION
-        for _, chunk in _windows(values, window):
-            out.append(None if chunk is None
-                       else sum(chunk, _ZERO) / window)
+        for _, _chunk, total in _windows_with_sum(values, window,
+                                                  need_values=False):
+            out.append(None if total is None else total / window)
     return out
 
 
@@ -210,9 +285,9 @@ def rolling_std(
     out: List[Optional[Decimal]] = []
     with localcontext() as ctx:
         ctx.prec = _PRECISION
-        for _, chunk in _windows(values, window):
+        for _, chunk, total in _windows_with_sum(values, window):
             out.append(None if chunk is None
-                       else _mean_and_std(chunk, window, ddof)[1])
+                       else _mean_and_std(chunk, total, window, ddof)[1])
     return out
 
 
@@ -237,12 +312,12 @@ def rolling_zscore(
     out: List[Optional[Decimal]] = []
     with localcontext() as ctx:
         ctx.prec = _PRECISION
-        for i, chunk in _windows(values, window):
+        for i, chunk, total in _windows_with_sum(values, window):
             v = values[i]
             if chunk is None or v is None:
                 out.append(None)
                 continue
-            mean, std = _mean_and_std(chunk, window, ddof)
+            mean, std = _mean_and_std(chunk, total, window, ddof)
             out.append(None if std == 0 else (v - mean) / std)
     return out
 

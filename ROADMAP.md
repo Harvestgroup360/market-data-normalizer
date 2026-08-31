@@ -11,9 +11,9 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Thirty-five tagged releases, twenty-two of them published to PyPI (the
+Thirty-six tagged releases, twenty-three of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 983 tests.
+dependencies, Python 3.10+, 1009 tests.
 
 | Layer | Modules |
 | --- | --- |
@@ -52,6 +52,18 @@ of the calendar rather than out of 252. A calendar refuses to answer for a
 date its source file never covered, which is the same rule the rest of the
 library follows: report the gap, do not fill it.
 
+Not a module, but the change in 1.24.0 belongs in this list: the trailing sum
+under `rolling_mean` is now slid instead of recomputed, which took it from
+O(n x window) to O(n) — 21x at window 250. `BENCHMARKS.md` said in 1.17.0 that
+we would not do this, because a running `Decimal` total rounds differently
+from a fresh sum and a library claiming exact numbers cannot have a statistic
+that depends on where the window sits. That objection was right; what it
+missed is that the rounding is observable. Every update runs with the
+`Inexact` flag cleared and is discarded the moment it would round. On ordinary
+data nothing changed; where anything did, the slid total is the exact sum and
+the old one had lost a digit, which the test suite checks against rational
+arithmetic rather than asserting.
+
 `fx` is the newest and the one we expected to be simplest. A price is a number
 and a currency, most pipelines carry only the number, and the moment a study
 spans two venues that quote differently every figure in it depends on a second
@@ -81,10 +93,21 @@ sell up so that rounding can never improve a backtested fill.
 ## Asked for
 
 **A native Rust port of the core normalization and calculation paths.**
-Requested twice, independently, under
-[our LinkedIn post](https://www.linkedin.com/company/harvestgroup360) — once
-for the normalization logic and once for the calculators, in both cases to sit
-inside a low-latency execution path rather than a research one.
+Requested three times now, independently, under
+[our LinkedIn post](https://www.linkedin.com/company/harvestgroup360) — for
+the normalization logic, for the calculators, and most recently with a
+specific question about the binding: PyO3 against a plain C ABI, from someone
+offering to work on the execution calculators. In every case the destination
+is a low-latency execution path rather than a research one.
+
+No FFI has been chosen, because choosing one is the second decision. The first
+is which paths are worth moving, and the answer to that changed in 1.24.0: the
+trailing sum went from O(n x window) to O(n) in pure Python, 21x at window
+250, without altering an answer. What is left in the hot path is the variance
+pass, and that is arithmetic we picked deliberately — a port would have to
+reproduce its rounding exactly or stop claiming the same numbers, which is a
+harder specification than it sounds and the thing we would want settled before
+any binding question.
 
 This is the clearest signal we have received and we are taking it seriously,
 so it is worth being precise about what it would and would not be.
