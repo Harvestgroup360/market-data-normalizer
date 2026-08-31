@@ -48,7 +48,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
 from fractions import Fraction
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Iterable, List, Optional, Sequence, Tuple, cast
 
 from .bars import Bar
 from .fileio import open_text
@@ -420,11 +420,12 @@ def adjust_bars(
             Bar(
                 start_ns=b.start_ns,
                 interval_ns=b.interval_ns,
-                open=_apply(b.open, adj),
-                high=_apply(b.high, adj),
-                low=_apply(b.low, adj),
-                close=_apply(b.close, adj),
-                volume=_apply_size(b.volume, adj),
+                # A Bar's OHLCV are never None, so neither are these.
+                open=cast(Decimal, _apply(b.open, adj)),
+                high=cast(Decimal, _apply(b.high, adj)),
+                low=cast(Decimal, _apply(b.low, adj)),
+                close=cast(Decimal, _apply(b.close, adj)),
+                volume=cast(Decimal, _apply_size(b.volume, adj)),
                 trades=b.trades,
                 vwap=_apply(b.vwap, adj),
             )

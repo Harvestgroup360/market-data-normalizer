@@ -54,7 +54,7 @@ from __future__ import annotations
 from decimal import (Decimal, Inexact, InvalidOperation, getcontext,
                      localcontext)
 from enum import Enum
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, cast
 
 from .align import AlignedRow
 
@@ -206,17 +206,21 @@ def _windows_with_sum(values: _Series, window: int, *,
             running = None
             yield i, None, None
             continue
-        chunk = list(values[start:i + 1]) if need_values else _PRESENT
+        # Past the gap guard above, this window holds no None. The sequence
+        # type cannot express that, so it is stated once here.
+        window_values = cast(List[Decimal], values[start:i + 1])
+        chunk = list(window_values) if need_values else _PRESENT
         if running is None or not trust:
             flags[Inexact] = False
-            running = sum(values[start:i + 1], _ZERO)
+            running = sum(window_values, _ZERO)
             trust = not flags[Inexact]
         else:
             flags[Inexact] = False
-            candidate = running + values[i] - values[start - 1]
+            candidate = (running + cast(Decimal, values[i])
+                         - cast(Decimal, values[start - 1]))
             if flags[Inexact]:
                 flags[Inexact] = False
-                running = sum(values[start:i + 1], _ZERO)
+                running = sum(window_values, _ZERO)
                 trust = not flags[Inexact]
             else:
                 running = candidate
@@ -345,11 +349,15 @@ def rolling_correlation(
             if i + 1 < window:
                 out.append(None)
                 continue
-            xa = a[i - window + 1: i + 1]
-            xb = b[i - window + 1: i + 1]
-            if any(v is None for v in xa) or any(v is None for v in xb):
+            raw_a = a[i - window + 1: i + 1]
+            raw_b = b[i - window + 1: i + 1]
+            if any(v is None for v in raw_a) or any(v is None for v in raw_b):
                 out.append(None)
                 continue
+            # Both windows are gap-free from here; the checks above are the
+            # narrowing the sequence type cannot carry.
+            xa = cast(List[Decimal], raw_a)
+            xb = cast(List[Decimal], raw_b)
             ma = sum(xa, Decimal(0)) / window
             mb = sum(xb, Decimal(0)) / window
             cov = sum(((x - ma) * (y - mb) for x, y in zip(xa, xb)), Decimal(0))

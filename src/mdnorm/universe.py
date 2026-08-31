@@ -239,8 +239,8 @@ def cross_sectional_rank(
             j += 1
         # positions i..j share a value; give them the average rank
         average = Decimal(i + j + 2) / 2
-        for k in range(i, j + 1):
-            ranks[ordered[k][0]] = average
+        for pos in range(i, j + 1):
+            ranks[ordered[pos][0]] = average
         i = j + 1
 
     if not pct:

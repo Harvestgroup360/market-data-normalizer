@@ -11,9 +11,9 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Thirty-seven tagged releases, twenty-four of them published to PyPI (the
+Thirty-eight tagged releases, twenty-five of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 1009 tests.
+dependencies, Python 3.10+, 1011 tests, and a type checker that passes clean.
 
 | Layer | Modules |
 | --- | --- |
@@ -150,16 +150,6 @@ constraint handling would close the loop between `features`, `costs` and
 `metrics`. Held back deliberately: this is where a data library starts making
 investment decisions, and we would rather be sure the layer underneath is
 right first.
-
-**A PEP 561 `py.typed` marker.** The package is annotated, and until 1.25.0 it
-also carried a `Typing :: Typed` classifier — which was not true, because it
-never shipped the marker a type checker needs. The classifier is gone. Earning
-it back is real work rather than a one-line file: `mypy` reports 76 errors in
-11 files, and nearly all of them are places where an invariant the code
-enforces at runtime is not expressed in the types, mostly around the two kinds
-of missing this library is careful to keep apart. Shipping the marker before
-that is done would push those errors into everyone else's type-checking. CI
-prints the count on every run so it can be watched going down.
 
 ## Decided against
 

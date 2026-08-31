@@ -1191,12 +1191,15 @@ FIX representations of one trade collapse to an identical event, and a
 causality property applied across the feature layer: change the tail of an
 input, and every output before the change must be byte-identical.
 
-CI also runs `mypy` in a reporting-only job. The package is annotated but does
-**not** ship a PEP 561 `py.typed` marker: the annotations do not yet express
-every invariant the code enforces at runtime, and shipping the marker would
-push those errors into your type-checking rather than ours. The count is
-printed on every run so it can be watched going down. See
-[CONTRIBUTING.md](CONTRIBUTING.md).
+CI also runs `mypy`, and it is clean. The package ships a PEP 561 `py.typed`
+marker, so your type checker will use its annotations rather than ignore them.
+
+That marker was missing for most of this project's life while the packaging
+metadata claimed otherwise. Removing the false claim and then earning it back
+took one release each; what the second one mostly consisted of was writing
+down invariants the code already enforced — a trade cannot exist without a
+price, a window past the gap guard holds no `None`. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for where `cast` is and is not acceptable.
 
 ## License
 

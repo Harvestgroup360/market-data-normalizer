@@ -62,15 +62,21 @@ discussing before it is worth merging.
 
 ## Type annotations
 
-The package is annotated but does **not** ship a PEP 561 `py.typed` marker,
-because `mypy` currently reports 76 errors against it and most of them are
-places where an invariant we enforce at runtime is not expressed in the types.
-Shipping the marker would push those errors into the type-checking of everyone
-who depends on us.
+The package ships a PEP 561 `py.typed` marker, so your type checker will use
+its annotations. `mypy` is clean and CI fails on a new error.
 
-The count is printed by CI on every run so it can be watched going down. A
-pull request that reduces it without changing behaviour is welcome and does
-not need to fix everything at once.
+That was not true a release ago: the marker was missing while the classifier
+claimed otherwise, and `mypy` reported 76 errors. Most were places where an
+invariant the code enforces at runtime — a trade always has a price, a window
+past the gap guard holds no `None` — was not expressed in the types.
+
+Twenty-one of them are still resolved with `typing.cast` rather than with a
+proof. That is a deliberate limit: a `cast` is only acceptable where the
+invariant is enforced by a check the reader can see on the same screen, or by
+a `__post_init__` that makes the other case unconstructable. Each one carries
+a comment saying which. A pull request that replaces a `cast` with something
+the checker can verify by itself is welcome; one that adds a `cast` to silence
+a real problem is the thing to avoid.
 
 ## Style
 

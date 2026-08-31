@@ -33,7 +33,7 @@ from __future__ import annotations
 import argparse
 import sys
 from decimal import Decimal, localcontext
-from typing import List, Optional
+from typing import List, Optional, cast
 
 from . import __version__
 from .adjust import AdjustMethod, adjust_events, read_actions_csv
@@ -532,8 +532,9 @@ def _cmd_features(args: argparse.Namespace) -> int:
     with open_text(args.output, "w") as fh:
         w = _csv.writer(fh)
         w.writerow(["ts_ns"] + names)
-        for i, r in enumerate(rows):
-            w.writerow([r["ts_ns"]] + [fmt(out_cols[n][i]) for n in names])
+        for i, row in enumerate(rows):
+            w.writerow([row["ts_ns"]]
+                       + [fmt(out_cols[n][i]) for n in names])
 
     print(f"wrote {len(rows)} row(s), {len(names)} column(s) to {args.output}",
           file=sys.stderr)
@@ -575,13 +576,14 @@ def _cmd_labels(args: argparse.Namespace) -> int:
     with open_text(args.output, "w") as fh:
         w = _csv.writer(fh)
         w.writerow(header + [name])
-        for i, r in enumerate(rows):
+        for i, row in enumerate(rows):
             value = ""
-            if y[i] is not None:
+            label = y[i]
+            if label is not None:
                 with localcontext() as ctx:
                     ctx.prec = args.precision
-                    value = str(+y[i])
-            w.writerow([r.get(c, "") for c in header] + [value])
+                    value = str(+label)
+            w.writerow([row.get(c, "") for c in header] + [value])
 
     labelled = sum(1 for v in y if v is not None)
     print(f"wrote {len(rows)} row(s) to {args.output}", file=sys.stderr)
@@ -669,10 +671,11 @@ def _cmd_universe(args: argparse.Namespace) -> int:
     with open_text(args.output, "w") as fh:
         w = _csv.writer(fh)
         w.writerow(["ts_ns", "members"] + names)
-        for i, r in enumerate(masked):
-            members = sum(1 for c in columns if r.values[c] is not None)
-            w.writerow([r.ts_ns, members]
-                       + [fmt(r.values[c]) for c in columns]
+        for i, aligned in enumerate(masked):
+            members = sum(1 for c in columns
+                          if aligned.values[c] is not None)
+            w.writerow([aligned.ts_ns, members]
+                       + [fmt(aligned.values[c]) for c in columns]
                        + [fmt(extra[n][i]) for n in extra])
 
     sizes = [sum(1 for c in columns if r.values[c] is not None) for r in masked]
@@ -821,8 +824,8 @@ def _cmd_metrics(args: argparse.Namespace) -> int:
         print(f"deflated ({rep.trials} trials) {fmt(rep.deflated)}",
               file=sys.stderr)
 
-    for w in rep.warnings:
-        print(f"note: {w}", file=sys.stderr)
+    for warning in rep.warnings:
+        print(f"note: {warning}", file=sys.stderr)
 
     if args.output:
         with open_text(args.output, "w") as fh:
@@ -894,8 +897,8 @@ def _cmd_costs(args: argparse.Namespace) -> int:
         print(f"  impact             {fmt(b.impact_bps)} bps", file=sys.stderr)
         print(f"  total              {fmt(b.total_bps)} bps "
               f"= {fmt(b.total)}", file=sys.stderr)
-        for w in b.warnings:
-            print(f"note: {w}", file=sys.stderr)
+        for warning in b.warnings:
+            print(f"note: {warning}", file=sys.stderr)
     elif args.cost_bps is not None:
         cost_bps = Decimal(args.cost_bps)
     elif args.input:
@@ -924,18 +927,21 @@ def _cmd_costs(args: argparse.Namespace) -> int:
 
         gross = series(args.column)
         turn = series(args.turnover_column)
-        rep = cost_report(gross, turn, cost_bps=cost_bps)
+        # Either branch above set it, or we returned; state that for the
+        # reader as well as the checker.
+        priced = cast(Decimal, cost_bps)
+        rep = cost_report(gross, turn, cost_bps=priced)
         print(f"\nperiods              {rep.periods}", file=sys.stderr)
         print(f"average turnover     {fmt(rep.average_turnover)}", file=sys.stderr)
         print(f"gross return         {fmt(rep.gross_return)}", file=sys.stderr)
         print(f"net return           {fmt(rep.net_return)}", file=sys.stderr)
         print(f"cost                 {fmt(rep.cost)}", file=sys.stderr)
         print(f"share of gross       {fmt(rep.cost_fraction)}", file=sys.stderr)
-        for w in rep.warnings:
-            print(f"note: {w}", file=sys.stderr)
+        for warning in rep.warnings:
+            print(f"note: {warning}", file=sys.stderr)
 
         if args.output:
-            net = apply_costs(gross, turn, cost_bps=cost_bps)
+            net = apply_costs(gross, turn, cost_bps=priced)
             with open_text(args.output, "w") as fh:
                 w = _csv.writer(fh)
                 head = list(rows[0])
@@ -1190,12 +1196,12 @@ def _cmd_fx(args: argparse.Namespace) -> int:
               f"other venues do not; widen --max-age deliberately or accept "
               f"the gap, but do not do neither.", file=sys.stderr)
     if len(converted):
-        first = rates.convert(Decimal(1), args.base, args.quote,
-                              prices.first_ts_ns, max_age_ns=args.max_age,
-                              via=args.via)
-        last = rates.convert(Decimal(1), args.base, args.quote,
-                             prices.last_ts_ns, max_age_ns=args.max_age,
-                             via=args.via)
+        # A non-empty series has both a first and a last timestamp.
+        span = (cast(int, prices.first_ts_ns), cast(int, prices.last_ts_ns))
+        first = rates.convert(Decimal(1), args.base, args.quote, span[0],
+                              max_age_ns=args.max_age, via=args.via)
+        last = rates.convert(Decimal(1), args.base, args.quote, span[1],
+                             max_age_ns=args.max_age, via=args.via)
         if first is not None and last is not None and first.rate != last.rate:
             move = (last.rate / first.rate - 1) * 100
             print(f"note: the rate moved {move:+.2f}% across this span, so a "

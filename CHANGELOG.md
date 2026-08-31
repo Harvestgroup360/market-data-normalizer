@@ -3,6 +3,37 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.26.0] - 2026-08-31
+
+### Added
+- The PEP 561 `py.typed` marker, so a type checker will actually use this
+  package's annotations. The `Typing :: Typed` classifier is back with it —
+  removed one release ago because it was not true, restored now that it is.
+- A test that the marker ships in the installed package. The classifier
+  outlived the marker once; this is what stops that recurring.
+
+### Changed
+- `mypy` goes from **76 errors in 11 files to zero**, with every one of the
+  1,011 tests unchanged. Nearly all of them were invariants the code enforces
+  at runtime but never stated in the types: a `TRADE` cannot be constructed
+  without a price, so the trade filters cannot yield one; a window past the
+  gap guard holds no `None`; an as-of lookup keyed by the series' own
+  timestamps cannot miss.
+- Twenty-one of those are resolved with `typing.cast` rather than a proof, and
+  each carries a comment naming the check that guarantees it. That is the
+  honest description: a `cast` asserts an invariant, it does not demonstrate
+  one, and it is only acceptable where the guarantee is visible on the same
+  screen. `CONTRIBUTING.md` says where the line is.
+- The rest are real fixes rather than annotations. Three loops in `cli.py` and
+  one in `universe.py` reused a name that was already bound to a different
+  type in the same scope — the kind of shadowing that is legal, confusing to
+  read, and occasionally a bug.
+- `filter_session` is now generic in its element type: filtering bars returns
+  `List[Bar]` rather than a union every caller has to narrow again. Behaviour
+  is unchanged; the signature simply stopped losing information.
+- The CI type-check job stops being reporting-only and fails the build. It was
+  advisory for exactly one release, which was long enough.
+
 ## [1.25.0] - 2026-08-31
 
 ### Removed

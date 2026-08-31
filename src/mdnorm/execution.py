@@ -37,7 +37,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Iterable, List, Optional, Sequence
+from typing import Iterable, List, Optional, Sequence, cast
 
 from .schema import EventType, MarketEvent, Side
 
@@ -112,7 +112,8 @@ def vwap(
     for e in _trades(events):
         if not _in_window(e.ts_ns, start_ns, end_ns) or e.size is None:
             continue
-        notional += e.price * e.size
+        # _trades() already dropped anything without a price.
+        notional += cast(Decimal, e.price) * e.size
         volume += e.size
     if volume == 0:
         return None

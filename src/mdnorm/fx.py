@@ -52,7 +52,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal, localcontext
-from typing import Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import Dict, Iterable, List, Mapping, Optional, Tuple, cast
 
 from .align import AsOfSeries
 from .bars import Bar
@@ -263,7 +263,9 @@ class FxRates:
                 return None
             if v <= 0:
                 raise ValueError(f"{pair} quoted a non-positive rate {v}")
-            return Quote(pair, v, ts_ns - age, age, inverted=False)
+            # A present value always carries an age; the pair type cannot say so.
+            hit = cast(int, age)
+            return Quote(pair, v, ts_ns - hit, hit, inverted=False)
         if not self.allow_inverse:
             return None
         flipped = self._series.get(pair.inverse)
@@ -274,7 +276,8 @@ class FxRates:
             return None
         if v <= 0:
             raise ValueError(f"{pair.inverse} quoted a non-positive rate {v}")
-        return Quote(pair.inverse, v, ts_ns - age, age, inverted=True)
+        hit = cast(int, age)
+        return Quote(pair.inverse, v, ts_ns - hit, hit, inverted=True)
 
     def has(self, pair: CurrencyPair) -> bool:
         """Whether this set can answer ``pair`` at all, inversion included."""
@@ -368,7 +371,8 @@ def convert_series(
     out: List[Tuple[int, Decimal]] = []
     dropped = 0
     for ts in series._ts:  # noqa: SLF001 - sorted timestamps, read-only
-        value, _ = series.at(ts)
+        # ts came out of the series itself, so the lookup cannot miss.
+        value = cast(Decimal, series.at(ts)[0])
         c = rates.convert(value, base, to, ts, max_age_ns=max_age_ns, via=via)
         if c is None:
             dropped += 1

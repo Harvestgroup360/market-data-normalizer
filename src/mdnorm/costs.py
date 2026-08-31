@@ -314,7 +314,8 @@ def estimate(
         impact_bps = _ZERO
         if liquidity is not None:
             participation = liquidity.participation(quantity)
-        if model.impact is not None and participation is not None:
+        if (model.impact is not None and liquidity is not None
+                and participation is not None):
             impact_bps = model.impact.cost_bps(participation, liquidity.volatility)
             if participation > _HIGH_PARTICIPATION:
                 warns.append(

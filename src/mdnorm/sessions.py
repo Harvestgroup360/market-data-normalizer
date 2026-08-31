@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
-from typing import FrozenSet, Iterable, List, Sequence, Tuple, Union
+from typing import FrozenSet, Iterable, List, Sequence, Tuple, Union, TypeVar
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .bars import Bar
@@ -79,6 +79,10 @@ def _local(ts_ns: int, session: Session) -> datetime:
         microsecond=nanos // 1_000
     )
     return utc.astimezone(session.zone)
+
+
+#: Anything with a timestamp this module knows how to read.
+_Item = TypeVar("_Item", bound=Union[MarketEvent, Bar])
 
 
 def _timestamp_of(item: Union[MarketEvent, Bar]) -> int:
@@ -162,12 +166,12 @@ def session_bounds(day: date, session: Session) -> Tuple[int, int]:
     return open_ns, close_ns
 
 
-def filter_session(
-    items: Iterable[Union[MarketEvent, Bar]], session: Session
-) -> List[Union[MarketEvent, Bar]]:
+def filter_session(items: Iterable[_Item], session: Session) -> List[_Item]:
     """Keep only the events or bars that fall inside ``session``.
 
-    Bars are judged by their opening timestamp, events by their own.
+    Bars are judged by their opening timestamp, events by their own. The
+    element type survives: filtering bars gives back bars, not a union that
+    every caller then has to narrow again.
     """
     return [it for it in items if in_session(_timestamp_of(it), session)]
 

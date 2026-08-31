@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Iterable, List, Optional, Sequence
+from typing import Iterable, List, Optional, Sequence, cast
 
 from .schema import EventType, MarketEvent, Side
 
@@ -55,22 +55,24 @@ def time_bars(
     for e in trades:
         start = (e.ts_ns // interval_ns) * interval_ns
         size = e.size if e.size is not None else Decimal(0)
+        # A TRADE without a price cannot be constructed; see MarketEvent.
+        price = cast(Decimal, e.price)
         b = buckets.get(start)
         if b is None:
             buckets[start] = {
-                "open": e.price, "high": e.price, "low": e.price,
-                "close": e.price, "volume": size,
-                "notional": e.price * size, "trades": 1,
+                "open": price, "high": price, "low": price,
+                "close": price, "volume": size,
+                "notional": price * size, "trades": 1,
             }
             order.append(start)
         else:
-            if e.price > b["high"]:
-                b["high"] = e.price
-            if e.price < b["low"]:
-                b["low"] = e.price
-            b["close"] = e.price
+            if price > b["high"]:
+                b["high"] = price
+            if price < b["low"]:
+                b["low"] = price
+            b["close"] = price
             b["volume"] += size
-            b["notional"] += e.price * size
+            b["notional"] += price * size
             b["trades"] += 1
 
     out: List[Bar] = []
@@ -235,22 +237,23 @@ def _event_bars(events, threshold_reached) -> List[Bar]:
     acc: Optional[dict] = None
     for e in _sorted_trades(events):
         size = e.size if e.size is not None else Decimal(0)
+        price = cast(Decimal, e.price)      # guaranteed by _sorted_trades
         if acc is None:
             acc = {"first_ts": e.ts_ns, "last_ts": e.ts_ns,
-                   "open": e.price, "high": e.price, "low": e.price,
-                   "close": e.price, "volume": size,
-                   "notional": e.price * size, "trades": 1,
+                   "open": price, "high": price, "low": price,
+                   "close": price, "volume": size,
+                   "notional": price * size, "trades": 1,
                    "signed_volume": _signed(e, size),
                    "signed_ticks": _sign(e)}
         else:
-            if e.price > acc["high"]:
-                acc["high"] = e.price
-            if e.price < acc["low"]:
-                acc["low"] = e.price
-            acc["close"] = e.price
+            if price > acc["high"]:
+                acc["high"] = price
+            if price < acc["low"]:
+                acc["low"] = price
+            acc["close"] = price
             acc["last_ts"] = e.ts_ns
             acc["volume"] += size
-            acc["notional"] += e.price * size
+            acc["notional"] += price * size
             acc["trades"] += 1
             acc["signed_volume"] += _signed(e, size)
             acc["signed_ticks"] += _sign(e)

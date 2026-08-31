@@ -45,7 +45,7 @@ from collections import Counter
 from dataclasses import dataclass
 from decimal import Decimal, localcontext
 from enum import Enum
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple, cast
 
 from .align import AsOfSeries, BarField
 from .bars import Bar
@@ -173,7 +173,9 @@ def _within(left: Decimal, right: Decimal,
 
 
 def _pairs(series: AsOfSeries) -> Dict[int, Decimal]:
-    return {ts: series.at(ts)[0] for ts in _timestamps(series)}
+    # Every ts here came out of the series itself, so the lookup cannot miss.
+    return {ts: cast(Decimal, series.at(ts)[0])
+            for ts in _timestamps(series)}
 
 
 def _timestamps(series: AsOfSeries) -> List[int]:

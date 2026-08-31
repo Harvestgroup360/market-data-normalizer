@@ -43,7 +43,7 @@ from bisect import bisect_right
 from dataclasses import replace
 from decimal import Decimal, InvalidOperation
 from enum import Enum
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Iterable, List, Optional, Sequence, Tuple, cast
 
 from .schema import EventType, MarketEvent, Side
 
@@ -303,7 +303,8 @@ def roll_spread(events: Iterable[MarketEvent]) -> Optional[Decimal]:
     trending or thin data, where the estimator is simply undefined, and one
     that should be reported rather than clamped to zero.
     """
-    prices = [e.price for e in sorted(events, key=lambda e: e.ts_ns) if _is_trade(e)]
+    prices = [cast(Decimal, e.price)                 # _is_trade checks it
+              for e in sorted(events, key=lambda e: e.ts_ns) if _is_trade(e)]
     diffs = [prices[i] - prices[i - 1] for i in range(1, len(prices))]
     if len(diffs) < 3:
         return None
