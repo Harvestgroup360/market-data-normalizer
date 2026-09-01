@@ -532,13 +532,74 @@ which reads as diversification. With `max_age_ns` a quiet column becomes
 
 **A feed you get late was not available on time.** `AsOfSeries.delayed(250ms)`
 shifts observation times forward by the delivery delay, so alignment reflects
-when you could have acted rather than when the source stamped it.
+when you could have acted rather than when the source stamped it. If you do
+not know what your delay is, the next section measures it.
 
 Nothing interpolates or smooths. `align_on` takes timestamps you supply, for
 one row per print of a reference instrument, per signal, or per fill.
 
 ```console
 $ mdnorm align BTC=btc.csv ETH=eth.jsonl --interval 1m --max-age 5m -o matrix.csv
+```
+
+### When the venue says it happened, and when you found out
+
+`AsOfSeries.delayed` has always taken a delay and said, in its own docstring,
+that a delay of zero is a claim about your infrastructure rather than a
+default. It never offered a way to find out what yours is. This is that half:
+
+```python
+from mdnorm import Arrival, delay_report, as_received, as_stamped, view_gap
+
+report = delay_report(arrivals)     # what the transport actually costs
+report.median_ns, report.p95_ns     # the typical case, and the one to size for
+report.negative                     # rows received before they happened
+report.out_of_order                 # messages that overtook the one before
+
+knowable = as_received(arrivals)    # the series you could have acted on
+optimistic = as_stamped(arrivals)   # the series research usually builds
+view_gap(arrivals, grid).share      # how often those two disagree
+```
+
+**A venue timestamp is not an arrival.** Keying research on it claims the
+information reached you instantly, and the error only ever points one way:
+every signal looks actionable slightly earlier than it was, every cross-venue
+lead is inflated by the difference in transport, and a fill is priced at a
+quote that had not reached the machine placing the order. Nothing fails. The
+result is simply better than it should be.
+
+**There is no default delay.** A file with no receipt column gets no invented
+one. State what you decided to believe with `assume_delay_ns=` and the report
+comes back with `assumed=True` — a report that hides which of the two it used
+is worse than no report.
+
+**A negative delay is a fact, not an outlier.** Receipt before the venue stamp
+means the clocks disagree, which is usually the more interesting finding. It
+is counted separately and never clamped, because clamping turns a clock
+problem into a latency figure that looks fine.
+
+**The mean latency is the least useful summary there is.** A transport
+distribution has a tail and the mean mostly measures it. The report gives the
+median and the p95 by nearest rank, so every figure it prints is a delay that
+actually happened, and `tail_ratio` says whether the typical case and the bad
+case are the same problem.
+
+`view_gap` asks both views what they knew at each grid point and reports where
+they differ, with `largest_gain_ns` — the most unearned foresight found. That
+number is the one to compare against the horizon your signal acts on: a
+quarter of a second is nothing to a daily rebalance and everything to a queue
+position.
+
+```console
+$ mdnorm arrival feed.csv --interval 1s
+observations         184203
+median delay         412us
+p95 delay            3.9ms
+p95 / median         9.47x
+received before sent 0
+out of order         37
+for `AsOfSeries.delayed`: by_ns=412000 for the typical case, 3900000 for the
+case worth sizing against.
 ```
 
 ### Features that cannot see the future
@@ -1091,6 +1152,7 @@ $ mdnorm instruments symbol_map.csv trades.csv -o keyed.csv
 $ mdnorm calendar us_2026.csv --session 09:30-16:00 --tz America/New_York
 $ mdnorm fx prices.csv rates.csv --from EUR --to USD --max-age 1m -o usd.csv
 $ mdnorm ticks prices.csv --table ticks.csv
+$ mdnorm arrival feed.csv --interval 1s
 ```
 
 Also available as `python -m mdnorm`.

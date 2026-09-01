@@ -3,6 +3,40 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.27.0] - 2026-09-01
+
+### Added
+- `arrival`: the delay between when a venue says something happened and when
+  this process found out. `align.AsOfSeries.delayed` has taken a delay since
+  it was written, with a docstring saying a delay of zero is a claim about
+  your infrastructure rather than a default — and the library offered no way
+  to measure the one you have. This is the missing half.
+- `delay_report` gives the min, median, p95 and max by **nearest rank**, so
+  every figure it prints is a delay that actually happened. There is no mean,
+  deliberately: a transport distribution has a tail and the mean mostly
+  measures it. `tail_ratio` (p95 over median) says whether the typical case
+  and the bad case are the same problem.
+- Receipts before the venue stamp are counted as clock skew and **never
+  clamped to zero**. Clamping turns a clock problem into a latency figure that
+  looks fine. Messages that overtook the one before them are counted too,
+  rather than sorted away by a pipeline that then never mentions it.
+- `as_received` and `as_stamped` build the two series the same rows can
+  produce: the one a strategy could have acted on, and the optimistic one
+  research usually builds. Both ship, because the difference between them is
+  only measurable if you can hold them side by side.
+- `view_gap` asks both views what they knew at each point of a grid and
+  reports where they disagree, with `largest_gain_ns` — the most unearned
+  foresight it found. That number is meant to be compared against the horizon
+  a signal acts on, not judged on its own size.
+- `assume_delay_ns=` for files that carry no receipt column at all. It sets
+  `assumed=True` on the report. It is not a fallback that quietly fills in for
+  missing evidence; it is a way of writing down what you decided to believe.
+- `mdnorm arrival feed.csv --interval 1s`, which prints the report, names the
+  `by_ns` values to hand to `delayed`, and can write out either series.
+- 47 tests, including one that measures a feed's median delay, hands it to
+  `AsOfSeries.delayed`, and checks the shifted series matches the received one
+  exactly — the round trip the module exists to make possible.
+
 ## [1.26.0] - 2026-08-31
 
 ### Added

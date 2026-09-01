@@ -22,6 +22,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm calendar us_2026.csv --session 09:30-16:00 --tz America/New_York
     mdnorm fx prices.csv rates.csv --from EUR --to USD --max-age 1m -o usd.csv
     mdnorm ticks prices.csv --table ticks.csv
+    mdnorm arrival feed.csv --interval 1s
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -46,6 +47,8 @@ from .costs import (CostModel, Fees, ImpactModel, Liquidity, apply_costs,
                     breakeven_participation, capacity, cost_report, estimate)
 from .instruments import (SymbolMap, key_by_instrument,
                           read_symbol_map_csv, series_segments)
+from .arrival import (as_received, as_stamped, delay_report,
+                      read_arrivals_csv, view_gap)
 from .calendars import read_calendar_csv
 from .fx import convert_series, read_fx_csv
 from .ticksize import Rounding, grid_report, read_tick_table_csv
@@ -1306,6 +1309,90 @@ def _cmd_calendar(args: argparse.Namespace) -> int:
     return 0
 
 
+def _fmt_ns(ns: Optional[int]) -> str:
+    """A duration in nanoseconds, in whatever unit reads as a number."""
+    if ns is None:
+        return "-"
+    sign = "-" if ns < 0 else ""
+    n = abs(ns)
+    if n < 1_000:
+        return f"{sign}{n}ns"
+    if n < 1_000_000:
+        return f"{sign}{n / 1_000:.3g}us"
+    if n < 1_000_000_000:
+        return f"{sign}{n / 1_000_000:.4g}ms"
+    return f"{sign}{n / 1_000_000_000:.4g}s"
+
+
+def _cmd_arrival(args: argparse.Namespace) -> int:
+    try:
+        arrivals = read_arrivals_csv(
+            args.input, venue_column=args.venue_field,
+            received_column=args.received_field,
+            value_column=args.value_field)
+    except (KeyError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    rep = delay_report(arrivals)
+    print(f"observations         {rep.observations}", file=sys.stderr)
+    print(f"min delay            {_fmt_ns(rep.min_ns)}", file=sys.stderr)
+    print(f"median delay         {_fmt_ns(rep.median_ns)}", file=sys.stderr)
+    print(f"p95 delay            {_fmt_ns(rep.p95_ns)}", file=sys.stderr)
+    print(f"max delay            {_fmt_ns(rep.max_ns)}", file=sys.stderr)
+    if rep.tail_ratio is not None:
+        print(f"p95 / median         {rep.tail_ratio:.2f}x", file=sys.stderr)
+    print(f"received before sent {rep.negative}", file=sys.stderr)
+    print(f"out of order         {rep.out_of_order}", file=sys.stderr)
+
+    if rep.negative:
+        share = rep.clock_skew_share
+        assert share is not None  # negative > 0 implies observations > 0
+        print(f"note: {share * 100:.2f}% of rows were received before the "
+              f"venue says they happened. That is a clock disagreement, not "
+              f"a latency, and the delays above are measured against the "
+              f"same clocks.", file=sys.stderr)
+    if rep.out_of_order:
+        print(f"note: {rep.out_of_order} message(s) overtook the one before "
+              f"them. Anything that assumes receipt order matches venue "
+              f"order is wrong that often.", file=sys.stderr)
+    if rep.median_ns is not None and rep.median_ns > 0:
+        print(f"for `AsOfSeries.delayed`: by_ns={rep.median_ns} for the "
+              f"typical case, {rep.p95_ns} for the case worth sizing "
+              f"against.", file=sys.stderr)
+
+    if args.interval:
+        stamps = [a.received_ns for a in arrivals] + \
+                 [a.venue_ns for a in arrivals]
+        start, stop = min(stamps), max(stamps)
+        points = list(range(start, stop + 1, args.interval))
+        gap = view_gap(arrivals, points)
+        share = gap.share
+        print(f"grid points          {gap.grid_points} "
+              f"every {_fmt_ns(args.interval)}", file=sys.stderr)
+        if share is not None:
+            print(f"views disagree at    {gap.differ} "
+                  f"({share * 100:.2f}%)", file=sys.stderr)
+        print(f"first disagreement   {gap.earliest_gain_ns}", file=sys.stderr)
+        print(f"largest foresight    {_fmt_ns(gap.largest_gain_ns)}",
+              file=sys.stderr)
+        if gap.differ:
+            print("note: at those points a venue-stamped join shows a value "
+                  "the process did not have yet. Whether that matters is a "
+                  "question about the horizon your signal acts on, not about "
+                  "the size of the number.", file=sys.stderr)
+
+    if not args.output:
+        return 0
+    which = as_stamped(arrivals) if args.stamped else as_received(arrivals)
+    with open(args.output, "w", newline="", encoding="utf-8") as fh:
+        fh.write("ts_ns,value\n")
+        for ts, val in zip(_fx_timestamps(which), _fx_values(which)):
+            fh.write(f"{ts},{val}\n")
+    print(f"wrote {args.output}", file=sys.stderr)
+    return 0
+
+
 def _cmd_reconcile(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -1915,6 +2002,29 @@ def build_parser() -> argparse.ArgumentParser:
     p_cal.add_argument("-o", "--output", default=None,
                        help="write the trading days and their closes to a CSV")
     p_cal.set_defaults(func=_cmd_calendar)
+
+
+    p_ar = sub.add_parser("arrival",
+                          help="measure the delay between the venue stamp "
+                               "and the moment you received it, and say what "
+                               "keying research on the venue stamp buys")
+    p_ar.add_argument("input", help="CSV of venue_ns,received_ns[,value]")
+    p_ar.add_argument("--interval", type=parse_interval, default=None,
+                      metavar="D",
+                      help="compare the venue-stamped and receipt-stamped "
+                           "views on a grid of this spacing, e.g. 1s")
+    p_ar.add_argument("-o", "--output", default=None,
+                      help="write the receipt-stamped series to a CSV — the "
+                           "one you could actually have acted on")
+    p_ar.add_argument("--stamped", action="store_true",
+                      help="write the venue-stamped series instead; the right "
+                           "series for what the market did, the wrong one for "
+                           "what you could have done")
+    p_ar.add_argument("--venue-field", default="venue_ns", metavar="NAME")
+    p_ar.add_argument("--received-field", default="received_ns",
+                      metavar="NAME")
+    p_ar.add_argument("--value-field", default="value", metavar="NAME")
+    p_ar.set_defaults(func=_cmd_arrival)
 
 
     p_rc = sub.add_parser("reconcile",

@@ -11,9 +11,9 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Thirty-eight tagged releases, twenty-five of them published to PyPI (the
+Thirty-nine tagged releases, twenty-six of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 1011 tests, and a type checker that passes clean.
+dependencies, Python 3.10+, 1058 tests, and a type checker that passes clean.
 
 | Layer | Modules |
 | --- | --- |
@@ -23,12 +23,12 @@ dependencies, Python 3.10+, 1011 tests, and a type checker that passes clean.
 | Aggregation | `bars`, `sessions`, `calendars`, `adjust`, `fx` |
 | Microstructure | `book`, `consolidate`, `micro` |
 | Execution | `execution` |
-| Research | `align`, `features`, `labels`, `revisions`, `mixfreq` |
+| Research | `align`, `arrival`, `features`, `labels`, `revisions`, `mixfreq` |
 | Evaluation | `metrics`, `costs` |
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
 Shipped since the last revision of this file: `mixfreq`, `membership`,
-`reconcile`, `calendars`, `fx` and `ticksize`. The first two were the items that stood under
+`reconcile`, `calendars`, `fx`, `ticksize` and `arrival`. The first two were the items that stood under
 *Under consideration* below; the other four were not on the list. `reconcile` is
 here because comparing two sources of the same series is the check people run
 before trusting either, and nothing in the library did it. A slow series now carries the
@@ -89,6 +89,24 @@ first table it was given. Rounding takes no default mode either: on a grid an
 exact half-tick is not an edge case but every mid, so the tie rule is a
 systematic choice with a direction, and `executable` rounds a buy down and a
 sell up so that rounding can never improve a backtested fill.
+
+`arrival` is the most recent, and it exists because the library had been
+giving an instruction it gave no way to follow. `AsOfSeries.delayed` has taken
+a delivery delay since it was written, and its docstring has said all along
+that a delay of zero is a claim about your infrastructure rather than a
+default — while nothing here would tell you what yours is. Now `delay_report`
+measures it from data carrying both stamps. It reports by nearest rank and
+publishes no mean, because a transport distribution has a tail and the mean
+mostly measures it; every figure it prints is a delay that actually happened.
+A receipt earlier than the venue stamp is counted as clock skew and never
+clamped, since clamping converts a clock problem into a latency figure that
+looks fine, and messages that overtook each other are counted rather than
+sorted away. `as_received` and `as_stamped` build both series the same rows
+can produce, and `view_gap` measures how far apart they are on a grid, which
+is the only way the difference between "what the market did" and "what I could
+have done" stops being an argument. There is no default delay anywhere in the
+module: state an assumption and the report carries `assumed=True`, because a
+report that hides which of the two it used is worse than no report.
 
 ## Asked for
 

@@ -920,3 +920,99 @@ def test_ticks_rejects_an_empty_input(tmp_path, capsys):
     tb = _table_csv(tmp_path / "t.csv")
     assert main(["ticks", str(px), "--table", tb]) == 1
     assert "no prices" in capsys.readouterr().err
+
+
+# -- arrival ---------------------------------------------------------------
+
+def _arrivals_csv(path, rows):
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("venue_ns,received_ns,value\n")
+        for venue, received, value in rows:
+            fh.write(f"{venue},{received},{value}\n")
+    return str(path)
+
+
+def _uniform_feed(tmp_path, delay_ns, n=5, step=10**9):
+    return _arrivals_csv(tmp_path / "feed.csv",
+                         [(step * (i + 1), step * (i + 1) + delay_ns,
+                           f"{100 + i}") for i in range(n)])
+
+
+def test_arrival_reports_the_delay_it_measured(tmp_path, capsys):
+    path = _uniform_feed(tmp_path, 250_000)
+    assert main(["arrival", path]) == 0
+    err = capsys.readouterr().err
+    assert "observations         5" in err
+    assert "median delay         250us" in err
+    assert "p95 / median         1.00x" in err
+
+
+def test_arrival_hands_the_figure_to_delayed(tmp_path, capsys):
+    """The report is only useful if it says what to do with the number."""
+    assert main(["arrival", _uniform_feed(tmp_path, 250_000)]) == 0
+    err = capsys.readouterr().err
+    assert "for `AsOfSeries.delayed`: by_ns=250000" in err
+
+
+def test_arrival_calls_out_a_clock_disagreement(tmp_path, capsys):
+    path = _arrivals_csv(tmp_path / "feed.csv",
+                         [(10**9, 10**9 + 100, "1"),
+                          (2 * 10**9, 2 * 10**9 - 100, "2"),
+                          (3 * 10**9, 3 * 10**9 + 100, "3"),
+                          (4 * 10**9, 4 * 10**9 + 100, "4")])
+    assert main(["arrival", path]) == 0
+    err = capsys.readouterr().err
+    assert "received before sent 1" in err
+    assert "clock disagreement, not a latency" in err
+    assert "min delay            -100ns" in err     # not clamped to zero
+
+
+def test_arrival_counts_messages_that_overtook_each_other(tmp_path, capsys):
+    path = _arrivals_csv(tmp_path / "feed.csv",
+                         [(10**9, 10**9 + 100, "1"),
+                          (2 * 10**9, 9 * 10**9, "2"),
+                          (3 * 10**9, 3 * 10**9 + 100, "3")])
+    assert main(["arrival", path]) == 0
+    err = capsys.readouterr().err
+    assert "out of order         1" in err
+    assert "overtook the one before" in err
+
+
+def test_arrival_grid_reports_the_unearned_foresight(tmp_path, capsys):
+    path = _uniform_feed(tmp_path, 400_000_000)
+    assert main(["arrival", path, "--interval", "1s"]) == 0
+    err = capsys.readouterr().err
+    assert "views disagree at" in err
+    assert "largest foresight    400ms" in err
+    assert "the horizon your signal acts on" in err
+
+
+def test_arrival_grid_is_silent_when_there_is_nothing_to_report(tmp_path, capsys):
+    assert main(["arrival", _uniform_feed(tmp_path, 0), "--interval", "1s"]) == 0
+    err = capsys.readouterr().err
+    assert "views disagree at    0" in err
+    assert "the horizon your signal acts on" not in err
+
+
+def test_arrival_writes_the_series_you_could_have_acted_on(tmp_path):
+    path = _uniform_feed(tmp_path, 250_000_000, n=3)
+    out = tmp_path / "knowable.csv"
+    assert main(["arrival", path, "-o", str(out)]) == 0
+    rows = list(csv.DictReader(open(out)))
+    assert [int(r["ts_ns"]) for r in rows] == [1_250_000_000, 2_250_000_000,
+                                               3_250_000_000]
+
+
+def test_arrival_stamped_writes_the_optimistic_one(tmp_path):
+    path = _uniform_feed(tmp_path, 250_000_000, n=3)
+    out = tmp_path / "optimistic.csv"
+    assert main(["arrival", path, "-o", str(out), "--stamped"]) == 0
+    rows = list(csv.DictReader(open(out)))
+    assert [int(r["ts_ns"]) for r in rows] == [10**9, 2 * 10**9, 3 * 10**9]
+
+
+def test_arrival_refuses_a_file_with_one_clock(tmp_path, capsys):
+    path = tmp_path / "one.csv"
+    path.write_text("ts_ns,value\n1,2\n", encoding="utf-8")
+    assert main(["arrival", str(path)]) == 1
+    assert "error:" in capsys.readouterr().err

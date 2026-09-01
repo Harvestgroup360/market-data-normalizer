@@ -27,6 +27,16 @@ from .align import (
     align_on,
     grid,
 )
+from .arrival import (
+    Arrival,
+    DelayReport,
+    ViewGap,
+    as_received,
+    as_stamped,
+    delay_report,
+    read_arrivals_csv,
+    view_gap,
+)
 from .costs import (
     CostBreakdown,
     CostModel,
@@ -219,7 +229,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.26.0"
+__version__ = "1.27.0"
 
 __all__ = [
     "MarketEvent",
@@ -246,6 +256,14 @@ __all__ = [
     "align_on",
     "align_bars",
     "grid",
+    "Arrival",
+    "DelayReport",
+    "ViewGap",
+    "delay_report",
+    "as_received",
+    "as_stamped",
+    "view_gap",
+    "read_arrivals_csv",
     "ReturnMethod",
     "column",
     "timestamps",
