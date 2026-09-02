@@ -23,6 +23,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm fx prices.csv rates.csv --from EUR --to USD --max-age 1m -o usd.csv
     mdnorm ticks prices.csv --table ticks.csv
     mdnorm arrival feed.csv --interval 1s
+    mdnorm seasonality volume.csv --session 09:30-16:00 --bucket 5m
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -50,6 +51,9 @@ from .instruments import (SymbolMap, key_by_instrument,
 from .arrival import (as_received, as_stamped, delay_report,
                       read_arrivals_csv, view_gap)
 from .calendars import read_calendar_csv
+from .seasonality import (deseasonalise, full_sample_deseasonalise,
+                          profile_leak, read_samples_csv,
+                          session_profile)
 from .fx import convert_series, read_fx_csv
 from .ticksize import Rounding, grid_report, read_tick_table_csv
 from .membership import Basis, read_index_changes_csv, survivorship_gap
@@ -1321,7 +1325,14 @@ def _fmt_ns(ns: Optional[int]) -> str:
         return f"{sign}{n / 1_000:.3g}us"
     if n < 1_000_000_000:
         return f"{sign}{n / 1_000_000:.4g}ms"
-    return f"{sign}{n / 1_000_000_000:.4g}s"
+    seconds = n // 1_000_000_000
+    if seconds < 90:
+        return f"{sign}{n / 1_000_000_000:.4g}s"
+    minutes, rest = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{sign}{minutes}m" + (f"{rest}s" if rest else "")
+    hours, minutes = divmod(minutes, 60)
+    return f"{sign}{hours}h" + (f"{minutes}m" if minutes else "")
 
 
 def _cmd_arrival(args: argparse.Namespace) -> int:
@@ -1390,6 +1401,105 @@ def _cmd_arrival(args: argparse.Namespace) -> int:
         for ts, val in zip(_fx_timestamps(which), _fx_values(which)):
             fh.write(f"{ts},{val}\n")
     print(f"wrote {args.output}", file=sys.stderr)
+    return 0
+
+
+def _cmd_seasonality(args: argparse.Namespace) -> int:
+    session = parse_session(args.session, args.tz)
+    cal = None
+    if args.calendar:
+        cal = read_calendar_csv(args.calendar, session, name=args.calendar)
+    try:
+        samples = read_samples_csv(args.input, ts_column=args.ts_field,
+                                   value_column=args.value_field)
+    except (KeyError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    shape = session_profile(samples, session, bucket_ns=args.bucket,
+                            min_observations=args.min_observations,
+                            calendar=cal, include_short=args.include_short)
+    if shape.sessions == 0:
+        print("error: no samples fell inside the session; check --session "
+              "and --tz", file=sys.stderr)
+        return 1
+
+    print(f"sessions used        {shape.sessions}", file=sys.stderr)
+    if cal is not None:
+        print(f"sessions excluded    {shape.excluded} (short or non-trading)",
+              file=sys.stderr)
+    else:
+        print("note: no --calendar, so every day is treated as full length. "
+              "A half-day's close lands in a bucket that is mid-afternoon on "
+              "every other day.", file=sys.stderr)
+    print(f"buckets              {len(shape)} of "
+          f"{_fmt_ns(args.bucket)}", file=sys.stderr)
+    print(f"buckets with no data {shape.empty_buckets}", file=sys.stderr)
+
+    # Pair each observed bucket with its value so the comparison is over
+    # Decimals rather than over an Optional the reader has to reason about.
+    seen = [(b.start_offset_ns, v) for b in shape.observed
+            if (v := b.value) is not None]
+    if seen:
+        peak = max(seen, key=lambda pair: pair[1])[0]
+        trough = min(seen, key=lambda pair: pair[1])[0]
+        high, low = shape.factor_at(peak), shape.factor_at(trough)
+        assert high is not None and low is not None   # both buckets observed
+        print(f"heaviest bucket      +{_fmt_ns(peak)} into the "
+              f"session ({high:.2f}x)",
+              file=sys.stderr)
+        print(f"lightest bucket      +{_fmt_ns(trough)} into "
+              f"the session ({low:.2f}x)",
+              file=sys.stderr)
+
+    leak = profile_leak(samples, session, bucket_ns=args.bucket,
+                        min_sessions=args.min_sessions,
+                        min_observations=args.min_observations,
+                        tolerance=Decimal(args.tolerance), calendar=cal,
+                        include_short=args.include_short)
+    print(f"comparable samples   {leak.knowable} of {leak.samples}",
+          file=sys.stderr)
+    if leak.knowable == 0:
+        print(f"note: nothing to compare — fewer than --min-sessions "
+              f"({args.min_sessions}) days of history exist before any "
+              f"sample. Lower it or supply more data.", file=sys.stderr)
+    else:
+        share = leak.differing_fraction
+        assert share is not None and leak.median_gap is not None
+        assert leak.max_gap is not None
+        print(f"factor differs by    >{args.tolerance}: {leak.differ} "
+              f"({share * 100:.2f}%)", file=sys.stderr)
+        print(f"median gap           {leak.median_gap * 100:.2f}%",
+              file=sys.stderr)
+        print(f"largest gap          {leak.max_gap * 100:.2f}%",
+              file=sys.stderr)
+        if leak.max_gap > Decimal("0.05"):
+            print("note: the full-sample profile and the one available at the "
+                  "time disagree by more than five per cent somewhere. The "
+                  "worst cases are early in the sample, where the full-sample "
+                  "curve is drawing on the most future.", file=sys.stderr)
+
+    if not args.output:
+        return 0
+    rows = (full_sample_deseasonalise(
+                samples, session, bucket_ns=args.bucket,
+                min_observations=args.min_observations, calendar=cal,
+                include_short=args.include_short)
+            if args.full_sample else
+            deseasonalise(samples, session, bucket_ns=args.bucket,
+                          min_sessions=args.min_sessions,
+                          min_observations=args.min_observations,
+                          calendar=cal, include_short=args.include_short))
+    with open(args.output, "w", newline="", encoding="utf-8") as fh:
+        fh.write("ts_ns,value\n")
+        for s in rows:
+            fh.write(f"{s.ts_ns},{s.value}\n")
+    print(f"wrote {args.output} ({len(rows)} rows of {len(samples)})",
+          file=sys.stderr)
+    if not args.full_sample:
+        print("note: rows before --min-sessions days of history are absent "
+              "rather than adjusted by a profile built from too little.",
+              file=sys.stderr)
     return 0
 
 
@@ -2025,6 +2135,46 @@ def build_parser() -> argparse.ArgumentParser:
                       metavar="NAME")
     p_ar.add_argument("--value-field", default="value", metavar="NAME")
     p_ar.set_defaults(func=_cmd_arrival)
+
+
+    p_sn = sub.add_parser("seasonality",
+                          help="measure the shape of the trading day and how "
+                               "much a profile fitted on the whole sample "
+                               "claims over the one available at the time")
+    p_sn.add_argument("input", help="CSV of ts_ns,value")
+    p_sn.add_argument("--session", metavar="HH:MM-HH:MM", required=True,
+                      help="the recurring session, e.g. 09:30-16:00")
+    p_sn.add_argument("--tz", default="UTC", metavar="ZONE",
+                      help="timezone for --session, e.g. America/New_York")
+    p_sn.add_argument("--bucket", type=parse_interval, required=True,
+                      metavar="D",
+                      help="width of each slot of the day, e.g. 5m. There is "
+                           "no default: finer buckets describe the curve "
+                           "better and put less evidence in each")
+    p_sn.add_argument("--min-sessions", type=int, default=20, metavar="N",
+                      help="days of history before a point-in-time profile is "
+                           "used at all (default: 20)")
+    p_sn.add_argument("--min-observations", type=int, default=1, metavar="N",
+                      help="observations a bucket needs before it reports a "
+                           "value instead of nothing (default: 1)")
+    p_sn.add_argument("--tolerance", default="0.01", metavar="X",
+                      help="relative gap worth counting as a disagreement "
+                           "(default: 0.01)")
+    p_sn.add_argument("--calendar", default=None, metavar="CSV",
+                      help="calendar of date,kind[,close,name] so early "
+                           "closes are left out instead of contaminating "
+                           "the middle of the day")
+    p_sn.add_argument("--include-short", action="store_true",
+                      help="keep early-close sessions in the profile anyway")
+    p_sn.add_argument("-o", "--output", default=None,
+                      help="write the deseasonalised series to a CSV")
+    p_sn.add_argument("--full-sample", action="store_true",
+                      help="write the series adjusted by one profile over "
+                           "everything; right for describing a market, wrong "
+                           "as an input to something that trades")
+    p_sn.add_argument("--ts-field", default="ts_ns", metavar="NAME")
+    p_sn.add_argument("--value-field", default="value", metavar="NAME")
+    p_sn.set_defaults(func=_cmd_seasonality)
 
 
     p_rc = sub.add_parser("reconcile",

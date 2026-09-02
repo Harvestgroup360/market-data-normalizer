@@ -602,6 +602,62 @@ for `AsOfSeries.delayed`: by_ns=412000 for the typical case, 3900000 for the
 case worth sizing against.
 ```
 
+### The shape of the day, fitted without the rest of the year
+
+Volume, spread and volatility all follow a curve inside a session — heavy at
+the open, thin at midday, heavy into the close. Any statistic computed across
+a day without removing that curve is mostly measuring the time of day:
+
+```python
+from mdnorm import Sample, US_EQUITY_RTH, session_profile, deseasonalise
+
+shape = session_profile(volumes, US_EQUITY_RTH, bucket_ns=5 * 60 * 10**9)
+shape.factor_at(0)                      # 2.09x — the first five minutes
+shape.sessions, shape.excluded          # what the curve is actually built on
+
+adjusted = deseasonalise(volumes, US_EQUITY_RTH,
+                         bucket_ns=5 * 60 * 10**9, min_sessions=20)
+```
+
+**Removing the shape is the easy half; not reading the future while you do it
+is the hard half.** The usual recipe fits one profile over the whole sample
+and divides every day by it, including the first. That profile contains days
+that had not happened yet, so an unusually heavy open in January is judged
+against a curve that already knows December. `expanding_profiles` gives each
+session a profile built only from the sessions before it, and `deseasonalise`
+uses it. `full_sample_deseasonalise` is the other one, kept deliberately: it
+is the better estimate for describing a market and the wrong input to
+anything that trades, and shipping both is what lets `profile_leak` measure
+the difference instead of arguing about it.
+
+**No default bucket size.** Five minutes over a 6½-hour session is 78
+buckets; the same five minutes on a venue that never closes is 288. Finer
+buckets describe the curve better and put less evidence in each, and where
+that trade sits is a property of your data.
+
+**A thin bucket reports nothing rather than the average.** Filling it with
+the overall mean makes the adjusted series look well-behaved in exactly the
+places where nothing is known about it, so `min_observations` sets the bar and
+the bucket comes back empty below it. A point with no factor leaves the
+output; a point silently divided by one would be a point claiming to have
+been adjusted.
+
+**A short session is not a quiet one.** Bucketing by offset from the open
+puts a half-day's closing surge into a bucket that is mid-afternoon on every
+other day. Given a `TradingCalendar`, early closes are left out and counted.
+
+```console
+$ mdnorm seasonality volume.csv --session 09:30-16:00 --tz America/New_York --bucket 5m
+sessions used        60
+buckets              78 of 5m
+heaviest bucket      +6h25m into the session (2.09x)
+lightest bucket      +3h55m into the session (0.47x)
+comparable samples   3120 of 4680
+factor differs by    >0.01: 2533 (81.19%)
+median gap           3.59%
+largest gap          30.46%
+```
+
 ### Features that cannot see the future
 
 With the matrix built, the next step is turning prices into returns, z-scores,
@@ -1153,6 +1209,7 @@ $ mdnorm calendar us_2026.csv --session 09:30-16:00 --tz America/New_York
 $ mdnorm fx prices.csv rates.csv --from EUR --to USD --max-age 1m -o usd.csv
 $ mdnorm ticks prices.csv --table ticks.csv
 $ mdnorm arrival feed.csv --interval 1s
+$ mdnorm seasonality volume.csv --session 09:30-16:00 --bucket 5m
 ```
 
 Also available as `python -m mdnorm`.

@@ -11,9 +11,9 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Thirty-nine tagged releases, twenty-six of them published to PyPI (the
+Forty tagged releases, twenty-seven of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 1058 tests, and a type checker that passes clean.
+dependencies, Python 3.10+, 1109 tests, and a type checker that passes clean.
 
 | Layer | Modules |
 | --- | --- |
@@ -23,12 +23,12 @@ dependencies, Python 3.10+, 1058 tests, and a type checker that passes clean.
 | Aggregation | `bars`, `sessions`, `calendars`, `adjust`, `fx` |
 | Microstructure | `book`, `consolidate`, `micro` |
 | Execution | `execution` |
-| Research | `align`, `arrival`, `features`, `labels`, `revisions`, `mixfreq` |
+| Research | `align`, `arrival`, `features`, `labels`, `revisions`, `mixfreq`, `seasonality` |
 | Evaluation | `metrics`, `costs` |
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
 Shipped since the last revision of this file: `mixfreq`, `membership`,
-`reconcile`, `calendars`, `fx`, `ticksize` and `arrival`. The first two were the items that stood under
+`reconcile`, `calendars`, `fx`, `ticksize`, `arrival` and `seasonality`. The first two were the items that stood under
 *Under consideration* below; the other four were not on the list. `reconcile` is
 here because comparing two sources of the same series is the check people run
 before trusting either, and nothing in the library did it. A slow series now carries the
@@ -107,6 +107,24 @@ is the only way the difference between "what the market did" and "what I could
 have done" stops being an argument. There is no default delay anywhere in the
 module: state an assumption and the report carries `assumed=True`, because a
 report that hides which of the two it used is worse than no report.
+
+`seasonality` is the newest and it extends the same argument one layer up.
+The library already refuses to read a value before it was published and
+refuses to pick an index universe with hindsight; a profile of the trading day
+is the same mistake in a shape people do not recognise as one. The usual
+recipe fits one intraday curve over the whole sample and divides every day by
+it, so a heavy open in January is judged against a curve that already contains
+December, and the adjusted series comes out smoother than anything computable
+at the time. Smoother inputs make better-looking signals. So
+`expanding_profiles` gives each session a curve built only from the sessions
+before it, `session_profile` builds the full-sample version, and `profile_leak`
+measures how far apart they are — both ship, because the full-sample fit is
+genuinely the better description of a market and genuinely the wrong input to
+something that trades, and a difference nobody can compute is a difference
+nobody checks. There is no default bucket width, a bucket below the evidence
+threshold reports nothing rather than the average, and an early-close session
+is left out of the curve instead of dropping its closing surge into a bucket
+that is mid-afternoon on every other day.
 
 ## Asked for
 

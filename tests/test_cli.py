@@ -1016,3 +1016,104 @@ def test_arrival_refuses_a_file_with_one_clock(tmp_path, capsys):
     path.write_text("ts_ns,value\n1,2\n", encoding="utf-8")
     assert main(["arrival", str(path)]) == 1
     assert "error:" in capsys.readouterr().err
+
+
+# -- seasonality -----------------------------------------------------------
+
+def _seasonal_csv(path, days=30, shape=(40, 10, 10, 20), growth=0):
+    """A four-hour UTC session, one sample per hour, optional shape drift."""
+    import datetime as _dt
+    from mdnorm import Session, session_bounds
+    session = Session(start=_dt.time(0, 0), end=_dt.time(4, 0), tz="UTC")
+    out, day, made = ["ts_ns,value"], _dt.date(2026, 1, 5), 0
+    while made < days:
+        if day.weekday() < 5:
+            open_ns, _ = session_bounds(day, session)
+            for i, v in enumerate(shape):
+                bump = growth if (i == len(shape) - 1 and made >= days // 2) else 0
+                out.append(f"{open_ns + i * 3600 * 10**9 + 10**9},{v + bump}")
+            made += 1
+        day += _dt.timedelta(days=1)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(out) + "\n")
+    return str(path)
+
+
+def test_seasonality_reports_the_shape_of_the_day(tmp_path, capsys):
+    path = _seasonal_csv(tmp_path / "v.csv")
+    assert main(["seasonality", path, "--session", "00:00-04:00",
+                 "--bucket", "1h"]) == 0
+    err = capsys.readouterr().err
+    assert "sessions used        30" in err
+    assert "buckets              4 of 1h" in err
+    assert "heaviest bucket      +0ns into the session (2.00x)" in err
+    assert "lightest bucket      +1h into the session (0.50x)" in err
+
+
+def test_seasonality_finds_no_leak_when_the_shape_never_moves(tmp_path, capsys):
+    path = _seasonal_csv(tmp_path / "v.csv")
+    assert main(["seasonality", path, "--session", "00:00-04:00",
+                 "--bucket", "1h", "--min-sessions", "5"]) == 0
+    err = capsys.readouterr().err
+    assert "largest gap          0.00%" in err
+    assert "drawing on the most future" not in err
+
+
+def test_seasonality_reports_a_leak_when_the_shape_moves(tmp_path, capsys):
+    path = _seasonal_csv(tmp_path / "v.csv", growth=60)
+    assert main(["seasonality", path, "--session", "00:00-04:00",
+                 "--bucket", "1h", "--min-sessions", "5"]) == 0
+    err = capsys.readouterr().err
+    assert "median gap" in err
+    assert "drawing on the most future" in err
+
+
+def test_seasonality_warns_when_no_calendar_was_given(tmp_path, capsys):
+    path = _seasonal_csv(tmp_path / "v.csv")
+    assert main(["seasonality", path, "--session", "00:00-04:00",
+                 "--bucket", "1h"]) == 0
+    assert "treated as full length" in capsys.readouterr().err
+
+
+def test_seasonality_says_when_there_is_not_enough_history_to_compare(
+        tmp_path, capsys):
+    path = _seasonal_csv(tmp_path / "v.csv", days=4)
+    assert main(["seasonality", path, "--session", "00:00-04:00",
+                 "--bucket", "1h", "--min-sessions", "20"]) == 0
+    err = capsys.readouterr().err
+    assert "comparable samples   0 of 16" in err
+    assert "Lower it or supply more data" in err
+
+
+def test_seasonality_writes_the_point_in_time_series(tmp_path):
+    path = _seasonal_csv(tmp_path / "v.csv")
+    out = tmp_path / "adj.csv"
+    assert main(["seasonality", path, "--session", "00:00-04:00",
+                 "--bucket", "1h", "--min-sessions", "5",
+                 "-o", str(out)]) == 0
+    rows = list(csv.DictReader(open(out)))
+    assert len(rows) == 25 * 4                      # the first five days go
+    assert {r["value"] for r in rows} == {"20"}     # a flat day flattens
+
+
+def test_seasonality_full_sample_keeps_every_row(tmp_path):
+    path = _seasonal_csv(tmp_path / "v.csv")
+    out = tmp_path / "adj.csv"
+    assert main(["seasonality", path, "--session", "00:00-04:00",
+                 "--bucket", "1h", "-o", str(out), "--full-sample"]) == 0
+    assert len(list(csv.DictReader(open(out)))) == 30 * 4
+
+
+def test_seasonality_refuses_a_session_nothing_falls_into(tmp_path, capsys):
+    path = _seasonal_csv(tmp_path / "v.csv")
+    assert main(["seasonality", path, "--session", "12:00-13:00",
+                 "--bucket", "1h"]) == 1
+    assert "check --session" in capsys.readouterr().err
+
+
+def test_seasonality_refuses_a_file_without_a_value_column(tmp_path, capsys):
+    path = tmp_path / "bad.csv"
+    path.write_text("ts_ns\n1\n", encoding="utf-8")
+    assert main(["seasonality", str(path), "--session", "00:00-04:00",
+                 "--bucket", "1h"]) == 1
+    assert "error:" in capsys.readouterr().err

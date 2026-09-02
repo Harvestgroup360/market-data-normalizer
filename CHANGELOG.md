@@ -3,6 +3,48 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.28.0] - 2026-09-02
+
+### Added
+- `seasonality`: the shape of the trading day, fitted without reading the rest
+  of the year. Volume, spread and volatility all follow a curve inside a
+  session, and a statistic computed across a day without removing it is mostly
+  measuring the time of day. Removing it is the easy half.
+- `expanding_profiles` hands each session a profile built only from the
+  sessions **before** it, so the curve a day is divided by is one that existed
+  at that day's open. `deseasonalise` uses it.
+- `session_profile` builds the ordinary full-sample version and
+  `full_sample_deseasonalise` applies it. Both ship deliberately: fitted over
+  everything is the better estimate for describing a market and the wrong
+  input to anything that trades, and having both is what lets `profile_leak`
+  measure the gap rather than argue about it.
+- `profile_leak` compares the two factor by factor and reports the share that
+  disagree, the median gap and the largest. The worst cases cluster early in
+  the sample, which is where a full-sample curve is drawing on the most
+  future.
+- No default bucket size. Five minutes over a 6½-hour session is 78 buckets
+  and 288 on a venue that never closes; where that trade sits is a property of
+  the data rather than of this library.
+- A bucket below `min_observations` reports nothing rather than the mean.
+  Filling a thin bucket with the average makes the adjusted series look
+  well-behaved in exactly the places where nothing is known about it. A sample
+  with no factor leaves the output — a point silently divided by one is a
+  point claiming to have been adjusted.
+- Early closes are excluded when a `TradingCalendar` is supplied, and counted.
+  Bucketing by offset from the open puts a half-day's closing surge into a
+  bucket that is mid-afternoon on every other day, which spoils both.
+- Nothing is emitted before `min_sessions` days of history exist. A profile
+  built from three days is one day's noise wearing a curve's clothes, and
+  dividing by it manufactures outliers instead of removing them — the same
+  rule as a rolling window that emits nothing until it is full.
+- `mdnorm seasonality volume.csv --session 09:30-16:00 --bucket 5m`, which
+  prints the curve, names the heaviest and lightest parts of the day, and
+  reports the leak.
+- 51 tests, including one that gives a single day a wild shape and checks the
+  profile handed to that day is byte-identical to a profile of the days before
+  it, and one that pins the arithmetic: adjusting by a factor that is itself a
+  quotient rounds twice, and the implementation rearranges it to round once.
+
 ## [1.27.0] - 2026-09-01
 
 ### Added

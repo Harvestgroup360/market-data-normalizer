@@ -109,6 +109,19 @@ from .reconcile import (
     reconcile_bars,
     suggest_shift,
 )
+from .seasonality import (
+    ProfileBucket,
+    ProfileLeak,
+    Sample,
+    SessionProfile,
+    bucket_index,
+    deseasonalise,
+    expanding_profiles,
+    full_sample_deseasonalise,
+    profile_leak,
+    read_samples_csv,
+    session_profile,
+)
 from .revisions import (
     Revision,
     RevisionSeries,
@@ -229,7 +242,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.27.0"
+__version__ = "1.28.0"
 
 __all__ = [
     "MarketEvent",
@@ -264,6 +277,17 @@ __all__ = [
     "as_stamped",
     "view_gap",
     "read_arrivals_csv",
+    "Sample",
+    "ProfileBucket",
+    "SessionProfile",
+    "ProfileLeak",
+    "bucket_index",
+    "session_profile",
+    "expanding_profiles",
+    "deseasonalise",
+    "full_sample_deseasonalise",
+    "profile_leak",
+    "read_samples_csv",
     "ReturnMethod",
     "column",
     "timestamps",
