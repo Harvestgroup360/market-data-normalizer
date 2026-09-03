@@ -24,6 +24,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm ticks prices.csv --table ticks.csv
     mdnorm arrival feed.csv --interval 1s
     mdnorm seasonality volume.csv --session 09:30-16:00 --bucket 5m
+    mdnorm resolution trades.jsonl
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -51,6 +52,8 @@ from .instruments import (SymbolMap, key_by_instrument,
 from .arrival import (as_received, as_stamped, delay_report,
                       read_arrivals_csv, view_gap)
 from .calendars import read_calendar_csv
+from .resolution import (classification_risk, detect_resolution,
+                         tie_groups)
 from .seasonality import (deseasonalise, full_sample_deseasonalise,
                           profile_leak, read_samples_csv,
                           session_profile)
@@ -1503,6 +1506,84 @@ def _cmd_seasonality(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_resolution(args: argparse.Namespace) -> int:
+    try:
+        events = _read_events(args)
+    except (KeyError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if not events:
+        print("error: no events in input", file=sys.stderr)
+        return 1
+
+    res = detect_resolution((e.ts_ns for e in events),
+                            min_observations=args.min_observations)
+    print(f"events               {res.observations}", file=sys.stderr)
+    print(f"distinct timestamps  {res.distinct}", file=sys.stderr)
+
+    if res.undetermined:
+        print("resolution           undetermined", file=sys.stderr)
+        print(f"note: {res.distinct} distinct timestamp(s) is below "
+              f"--min-observations ({args.min_observations}), and divisibility "
+              f"over that few values is a coincidence rather than evidence. "
+              f"That is not the same answer as one nanosecond.",
+              file=sys.stderr)
+    else:
+        assert res.granularity_ns is not None and res.overstated_digits is not None
+        print(f"resolution           {_fmt_ns(res.granularity_ns)}",
+              file=sys.stderr)
+        if res.overstated_digits:
+            print(f"padding digits       {res.overstated_digits}",
+                  file=sys.stderr)
+            print(f"note: timestamps are stored in nanoseconds and measured to "
+                  f"{_fmt_ns(res.granularity_ns)}. The last "
+                  f"{res.overstated_digits} digit(s) are zeros, not precision.",
+                  file=sys.stderr)
+
+    share = res.tied_share
+    print(f"tied timestamps      {res.tied_observations}"
+          + (f" ({share * 100:.2f}%)" if share is not None else ""),
+          file=sys.stderr)
+    print(f"tie groups           {res.ties}", file=sys.stderr)
+    print(f"largest tie          {res.largest_tie}", file=sys.stderr)
+    if res.ties:
+        print("note: events sharing a timestamp are in the order the writer "
+              "used, not an order the data records. Anything that reads "
+              "sequence from them is reading the writer.", file=sys.stderr)
+
+    if args.list_ties:
+        shown = 0
+        for ts, n in tie_groups(e.ts_ns for e in events):
+            print(f"  {ts}  x{n}", file=sys.stderr)
+            shown += 1
+            if shown >= args.list_limit:
+                print(f"  ... ({res.ties - shown} more)", file=sys.stderr)
+                break
+
+    risk = classification_risk(events, granularity_ns=res.granularity_ns)
+    if risk.trades == 0:
+        return 0
+    print(f"trades               {risk.trades}", file=sys.stderr)
+    print(f"  classified         {risk.classified}", file=sys.stderr)
+    if risk.granularity_ns is None:
+        print("note: without a resolution there is nothing to say about "
+              "same-tick quotes. State one with --granularity if you know it.",
+              file=sys.stderr)
+        return 0
+    exposed, changed = risk.exposed_share, risk.changed_share
+    assert exposed is not None and changed is not None
+    print(f"  same-tick quote    {risk.same_tick} ({exposed * 100:.2f}%)",
+          file=sys.stderr)
+    print(f"  side would change  {risk.changed} ({changed * 100:.2f}%)",
+          file=sys.stderr)
+    if risk.changed:
+        print("note: those trades are classified one way against the quote in "
+              "their own tick and the other way against the last quote that is "
+              "provably earlier. The data does not say which came first.",
+              file=sys.stderr)
+    return 0
+
+
 def _cmd_reconcile(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -2175,6 +2256,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_sn.add_argument("--ts-field", default="ts_ns", metavar="NAME")
     p_sn.add_argument("--value-field", default="value", metavar="NAME")
     p_sn.set_defaults(func=_cmd_seasonality)
+
+
+    p_rs = sub.add_parser("resolution",
+                          help="find what a feed's timestamps can actually "
+                               "distinguish, and what the ties cost the side "
+                               "inference")
+    _add_input_args(p_rs)
+    p_rs.add_argument("--min-observations", type=int, default=20, metavar="N",
+                      help="distinct timestamps required before a resolution "
+                           "is claimed at all (default: 20)")
+    p_rs.add_argument("--list-ties", action="store_true",
+                      help="list the timestamps that repeat")
+    p_rs.add_argument("--list-limit", type=int, default=20, metavar="N",
+                      help="how many ties to list (default: 20)")
+    p_rs.set_defaults(func=_cmd_resolution)
 
 
     p_rc = sub.add_parser("reconcile",

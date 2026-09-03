@@ -3,6 +3,41 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.29.0] - 2026-09-03
+
+### Added
+- `resolution`: what a feed's timestamps can actually distinguish, as opposed
+  to what they are stored in. Every timestamp in this library is an integer
+  nanosecond; a vendor stamping to the millisecond and handing you nanoseconds
+  has multiplied by a million, and the six trailing zeros look exactly like
+  precision.
+- `detect_resolution` walks the decimal ladder from a nanosecond to a second
+  and reports the coarsest unit that divides every timestamp given. Only
+  decimal units are considered — a divisor of 2,000,000 is an arithmetic fact
+  rather than a statement about a venue.
+- Below `min_observations` **distinct** timestamps the answer is undetermined
+  rather than one nanosecond. Twenty values all dividing by ten is a
+  one-in-10^20 coincidence on a real nanosecond feed; three is no evidence at
+  all. The threshold counts distinct values because a thousand copies of one
+  round number is one reading of the clock, and a timestamp of zero divides by
+  everything and is therefore excluded from the evidence.
+- Ties are counted and reported: how many groups, how many rows, the largest.
+  Rows sharing a timestamp are in the order the writer used, not an order the
+  data records.
+- `classification_risk` measures what that costs the side inference. For every
+  trade it compares the quote an as-of join would use against the last quote
+  that is provably in an earlier tick, reporting both the exposure
+  (`same_tick`) and the classifications that actually move (`changed`).
+  Without a determinable resolution it returns zeros and `granularity_ns` of
+  `None` rather than a reassuring figure it has no basis for.
+- `order_is_determined` answers the underlying question for two timestamps,
+  including the case where they differ by less than the clock that made them
+  can resolve.
+- `mdnorm resolution trades.jsonl`, with `--list-ties` for the repeats.
+- 46 tests, including one parametrised over every rung of the ladder and one
+  that alternates a quote either side of a trade's price so that every
+  classification flips depending on which quote the tie resolves to.
+
 ## [1.28.0] - 2026-09-02
 
 ### Added

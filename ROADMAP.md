@@ -11,15 +11,15 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Forty tagged releases, twenty-seven of them published to PyPI (the
+Forty-one tagged releases, twenty-eight of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 1109 tests, and a type checker that passes clean.
+dependencies, Python 3.10+, 1155 tests, and a type checker that passes clean.
 
 | Layer | Modules |
 | --- | --- |
 | Ingest | `normalizers`, `csvio`, `jsonl`, `streams`, `records`, `symbols` |
 | Instrument identity | `instruments`, `universe`, `membership` |
-| Cleaning | `quality`, `reconcile`, `ticksize` |
+| Cleaning | `quality`, `reconcile`, `ticksize`, `resolution` |
 | Aggregation | `bars`, `sessions`, `calendars`, `adjust`, `fx` |
 | Microstructure | `book`, `consolidate`, `micro` |
 | Execution | `execution` |
@@ -28,7 +28,7 @@ dependencies, Python 3.10+, 1109 tests, and a type checker that passes clean.
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
 Shipped since the last revision of this file: `mixfreq`, `membership`,
-`reconcile`, `calendars`, `fx`, `ticksize`, `arrival` and `seasonality`. The first two were the items that stood under
+`reconcile`, `calendars`, `fx`, `ticksize`, `arrival`, `seasonality` and `resolution`. The first two were the items that stood under
 *Under consideration* below; the other four were not on the list. `reconcile` is
 here because comparing two sources of the same series is the check people run
 before trusting either, and nothing in the library did it. A slow series now carries the
@@ -125,6 +125,23 @@ nobody checks. There is no default bucket width, a bucket below the evidence
 threshold reports nothing rather than the average, and an early-close session
 is left out of the curve instead of dropping its closing surge into a bucket
 that is mid-afternoon on every other day.
+
+`resolution` is the newest and the smallest, and it answers a question we had
+never seen asked of a market-data file: what can these timestamps actually
+distinguish? Everything in this library is an integer nanosecond, which is a
+storage decision and not a claim about any feed. A vendor stamping to the
+millisecond and handing over nanoseconds has multiplied by a million, and the
+six trailing zeros are indistinguishable from precision until somebody divides.
+The module divides. It reports the coarsest decimal unit that fits, refuses to
+answer from too few distinct values — twenty timestamps all dividing by ten is
+a one-in-10^20 coincidence on a real nanosecond feed, three is nothing — and
+counts the rows that share a timestamp, because those are in the order the
+writer used rather than an order the data records. The payoff is
+`classification_risk`, which takes the consequence out of the abstract: for
+every trade it compares the quote an as-of join picks against the last quote
+provably in an earlier tick, and reports how many side classifications rest on
+a tie and how many actually change. On a millisecond feed where trades and
+quotes share stamps, that second number is not small.
 
 ## Asked for
 

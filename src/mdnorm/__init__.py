@@ -122,6 +122,15 @@ from .seasonality import (
     read_samples_csv,
     session_profile,
 )
+from .resolution import (
+    ClassificationRisk,
+    Resolution,
+    classification_risk,
+    detect_resolution,
+    order_is_determined,
+    read_timestamps_csv,
+    tie_groups,
+)
 from .revisions import (
     Revision,
     RevisionSeries,
@@ -242,7 +251,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.28.0"
+__version__ = "1.29.0"
 
 __all__ = [
     "MarketEvent",
@@ -288,6 +297,13 @@ __all__ = [
     "full_sample_deseasonalise",
     "profile_leak",
     "read_samples_csv",
+    "Resolution",
+    "ClassificationRisk",
+    "detect_resolution",
+    "tie_groups",
+    "order_is_determined",
+    "classification_risk",
+    "read_timestamps_csv",
     "ReturnMethod",
     "column",
     "timestamps",

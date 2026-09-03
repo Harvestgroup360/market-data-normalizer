@@ -602,6 +602,63 @@ for `AsOfSeries.delayed`: by_ns=412000 for the typical case, 3900000 for the
 case worth sizing against.
 ```
 
+### Stored in nanoseconds is not measured in nanoseconds
+
+Every timestamp here is an integer nanosecond. That is a storage decision. A
+vendor that stamps to the millisecond and hands you nanoseconds has multiplied
+by a million, and the extra six digits are zeros wearing the clothes of
+precision:
+
+```python
+from mdnorm import detect_resolution, classification_risk
+
+res = detect_resolution(ts)
+res.granularity_ns, res.overstated_digits   # 1_000_000, 6
+res.tied_share                              # 76% of rows share a timestamp
+
+risk = classification_risk(events)
+risk.same_tick, risk.changed                # exposure, and what it moves
+```
+
+**Resolution is detectable, and detection is divisibility.** A millisecond
+feed leaves every timestamp a multiple of a million. The module walks the
+decimal ladder — nanosecond up to a second — and reports the coarsest unit
+that divides everything. Only decimal units, because those are the units a
+clock is read in; a divisor of 2,000,000 would be arithmetic rather than a
+statement about the venue.
+
+**Divisibility needs enough observations to mean anything.** Twenty distinct
+timestamps all being multiples of ten is a one-in-10²⁰ coincidence on a real
+nanosecond feed, so twenty is plenty — three is not. Below the threshold the
+answer is *undetermined*, which is not the same answer as one nanosecond. The
+threshold counts distinct values, since a thousand copies of one round number
+is one reading of the clock.
+
+**A tie is not an ordering.** Rows sharing a timestamp are in the order the
+writer used — an unstable sort, a queue that interleaved, a buffer flushed
+however it was held. Reading sequence out of them is reading the writer.
+
+**Where it costs something is trade classification.** The quote rule matches a
+trade against the newest quote at or before it. When that quote carries the
+same timestamp as the trade, which came first is not in the data.
+`classification_risk` counts those trades, then re-runs the rule against the
+last quote that is provably earlier and reports how many sides actually move.
+
+```console
+$ mdnorm resolution trades.jsonl
+distinct timestamps  3000
+resolution           1ms
+padding digits       6
+tied timestamps      3704 (76.34%)
+largest tie          2
+trades               1852
+  same-tick quote    1852 (100.00%)
+  side would change  815 (44.01%)
+```
+
+Nothing here re-sorts, jitters, or invents a finer timestamp. The resolution
+you have is the resolution you have.
+
 ### The shape of the day, fitted without the rest of the year
 
 Volume, spread and volatility all follow a curve inside a session — heavy at
@@ -1210,6 +1267,7 @@ $ mdnorm fx prices.csv rates.csv --from EUR --to USD --max-age 1m -o usd.csv
 $ mdnorm ticks prices.csv --table ticks.csv
 $ mdnorm arrival feed.csv --interval 1s
 $ mdnorm seasonality volume.csv --session 09:30-16:00 --bucket 5m
+$ mdnorm resolution trades.jsonl
 ```
 
 Also available as `python -m mdnorm`.
