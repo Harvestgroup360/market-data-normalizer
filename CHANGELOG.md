@@ -3,6 +3,45 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.30.0] - 2026-09-04
+
+### Added
+- `auctions`: the opening and closing crosses, kept apart from the continuous
+  session. A cross is one print at one price aggregating orders that never met
+  in a book, and every statistic that treats it as an ordinary trade is wrong
+  in a direction that flatters.
+- `auction_windows` derives the windows from a `TradingCalendar`, so a
+  half-day's cross lands where the venue actually closed instead of three
+  hours later. Days the calendar does not cover, or says did not trade,
+  produce no windows.
+- The window extents default to **zero** — wide enough for a print stamped at
+  the bell and nothing else. "Thirty seconds, everybody uses that" is a
+  constant that differs by venue and by decade, and a wrong one silently moves
+  ordinary continuous prints into the auction bucket.
+- Nothing is inferred. No condition-code guessing, no rule that a print ten
+  times the median size must be a cross: on a busy day that reclassifies
+  ordinary blocks, and the resulting figure describes the threshold rather
+  than the market.
+- `split_auctions` returns both halves and deletes nothing. Quotes inside a
+  window stay with the continuous stream, because a quote is still a quote and
+  the continuous side needs its state at the end of the day.
+- `auction_report` counts volume and notional separately — the notional share
+  is usually the larger, since the crosses print at the ends of the day's
+  range rather than at its average — and measures `largest_print_share` even
+  with no windows supplied, which is the one figure here that needs no
+  external information.
+- `vwap_gap` computes the benchmark with the crosses and without, plus the
+  crosses alone, and reports the distance in basis points. Both are real
+  benchmarks and neither is correct in general; the gap is what an execution
+  report is silently exposed to when nobody says which was used.
+- `mdnorm auctions trades.csv --calendar us_2026.csv --session 09:30-16:00`.
+
+### Fixed
+- The `auctions` command deliberately does not run the shared `--session`
+  filter over its input. That filter is half-open, so it would drop a closing
+  cross stamped exactly at the bell — the print the command exists to find.
+  There is a test for it.
+
 ## [1.29.0] - 2026-09-03
 
 ### Added

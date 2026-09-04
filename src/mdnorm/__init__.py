@@ -37,6 +37,18 @@ from .arrival import (
     read_arrivals_csv,
     view_gap,
 )
+from .auctions import (
+    AuctionKind,
+    AuctionReport,
+    AuctionWindow,
+    VwapGap,
+    auction_report,
+    auction_windows,
+    exclude_auctions,
+    in_auction,
+    split_auctions,
+    vwap_gap,
+)
 from .costs import (
     CostBreakdown,
     CostModel,
@@ -251,7 +263,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.29.0"
+__version__ = "1.30.0"
 
 __all__ = [
     "MarketEvent",
@@ -304,6 +316,16 @@ __all__ = [
     "order_is_determined",
     "classification_risk",
     "read_timestamps_csv",
+    "AuctionKind",
+    "AuctionWindow",
+    "AuctionReport",
+    "VwapGap",
+    "auction_windows",
+    "in_auction",
+    "split_auctions",
+    "exclude_auctions",
+    "auction_report",
+    "vwap_gap",
     "ReturnMethod",
     "column",
     "timestamps",

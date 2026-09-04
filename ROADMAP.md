@@ -11,16 +11,16 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Forty-one tagged releases, twenty-eight of them published to PyPI (the
+Forty-two tagged releases, twenty-nine of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 1155 tests, and a type checker that passes clean.
+dependencies, Python 3.10+, 1190 tests, and a type checker that passes clean.
 
 | Layer | Modules |
 | --- | --- |
 | Ingest | `normalizers`, `csvio`, `jsonl`, `streams`, `records`, `symbols` |
 | Instrument identity | `instruments`, `universe`, `membership` |
 | Cleaning | `quality`, `reconcile`, `ticksize`, `resolution` |
-| Aggregation | `bars`, `sessions`, `calendars`, `adjust`, `fx` |
+| Aggregation | `bars`, `sessions`, `calendars`, `auctions`, `adjust`, `fx` |
 | Microstructure | `book`, `consolidate`, `micro` |
 | Execution | `execution` |
 | Research | `align`, `arrival`, `features`, `labels`, `revisions`, `mixfreq`, `seasonality` |
@@ -28,7 +28,7 @@ dependencies, Python 3.10+, 1155 tests, and a type checker that passes clean.
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
 Shipped since the last revision of this file: `mixfreq`, `membership`,
-`reconcile`, `calendars`, `fx`, `ticksize`, `arrival`, `seasonality` and `resolution`. The first two were the items that stood under
+`reconcile`, `calendars`, `fx`, `ticksize`, `arrival`, `seasonality`, `resolution` and `auctions`. The first two were the items that stood under
 *Under consideration* below; the other four were not on the list. `reconcile` is
 here because comparing two sources of the same series is the check people run
 before trusting either, and nothing in the library did it. A slow series now carries the
@@ -142,6 +142,23 @@ every trade it compares the quote an as-of join picks against the last quote
 provably in an earlier tick, and reports how many side classifications rest on
 a tie and how many actually change. On a millisecond feed where trades and
 quotes share stamps, that second number is not small.
+
+`auctions` is the newest, and it follows directly from the one before it. The
+opening and closing crosses are single prints at a single price, aggregating
+orders that never met each other in a book, and nothing about them behaves
+like a trade: there is no aggressor to classify, the price sits at the end of
+the day's range rather than in it, and the size is often a large fraction of
+the session. A VWAP with the closing cross in it is dominated by one print, so
+a strategy that never traded the auction is scored against a price it could
+not have obtained, and one that only traded the auction beats the benchmark by
+construction. Both benchmarks ship, with the distance between them in basis
+points, because the failure here is not using the wrong one — it is not saying
+which. The windows come from the trading calendar, so a half-day's cross lands
+where the venue actually closed, and their extents default to zero rather than
+to the thirty seconds everybody uses, since that constant differs by venue and
+by decade. Nothing is inferred from print size: a rule that calls anything ten
+times the median a cross reclassifies ordinary blocks on a busy day, and the
+statistic that comes out describes the threshold instead of the market.
 
 ## Asked for
 

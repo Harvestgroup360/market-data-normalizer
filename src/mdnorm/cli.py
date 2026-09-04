@@ -25,6 +25,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm arrival feed.csv --interval 1s
     mdnorm seasonality volume.csv --session 09:30-16:00 --bucket 5m
     mdnorm resolution trades.jsonl
+    mdnorm auctions trades.csv --calendar us_2026.csv --session 09:30-16:00
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -52,6 +53,8 @@ from .instruments import (SymbolMap, key_by_instrument,
 from .arrival import (as_received, as_stamped, delay_report,
                       read_arrivals_csv, view_gap)
 from .calendars import read_calendar_csv
+from .auctions import (auction_report, auction_windows,
+                       exclude_auctions, vwap_gap)
 from .resolution import (classification_risk, detect_resolution,
                          tie_groups)
 from .seasonality import (deseasonalise, full_sample_deseasonalise,
@@ -81,7 +84,7 @@ from .quality import clean, find_issues
 from .fileio import open_text
 from .schema import MarketEvent, Side
 from .timeutil import epoch_to_ns, iso_to_ns
-from .sessions import filter_session, parse_session
+from .sessions import filter_session, parse_session, session_date
 from .streams import dedupe
 
 _UNIT_NS = {
@@ -1584,6 +1587,94 @@ def _cmd_resolution(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_auctions(args: argparse.Namespace) -> int:
+    from datetime import date as _date
+
+    if not args.session:
+        print("error: --session is required, since the auction windows are "
+              "positioned relative to the open and the close",
+              file=sys.stderr)
+        return 1
+    spec = args.session
+    # The shared session filter is half-open, so it would drop a closing
+    # cross stamped exactly at the bell — which is the print this command
+    # exists to find. Read everything and let the windows do the selecting.
+    args.session = None
+    session = parse_session(spec, args.tz)
+    try:
+        events = _read_events(args)
+        cal = read_calendar_csv(
+            args.calendar, session, name=args.calendar,
+            first_day=_date.fromisoformat(args.first_day)
+            if args.first_day else None,
+            last_day=_date.fromisoformat(args.last_day)
+            if args.last_day else None)
+    except (KeyError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if not events:
+        print("error: no events in input", file=sys.stderr)
+        return 1
+
+    days = sorted({session_date(e.ts_ns, session) for e in events})
+    windows = auction_windows(days, cal, open_ns=args.open_window,
+                              close_ns=args.close_window, lead_ns=args.lead)
+    if not windows:
+        print("error: the calendar covers none of the days in this file",
+              file=sys.stderr)
+        return 1
+
+    rep = auction_report(events, windows)
+    print(f"days                 {len(days)}", file=sys.stderr)
+    print(f"auction windows      {len(windows)}", file=sys.stderr)
+    print(f"trades               {rep.trades}", file=sys.stderr)
+    print(f"  in an auction      {rep.auction_trades}", file=sys.stderr)
+
+    vol, notional = rep.volume_share, rep.notional_share
+    if vol is None or notional is None:
+        print("note: no traded volume, so there is nothing to weight.",
+              file=sys.stderr)
+        return 0
+    print(f"volume in auctions   {vol * 100:.2f}%", file=sys.stderr)
+    print(f"notional in auctions {notional * 100:.2f}%", file=sys.stderr)
+    largest = rep.largest_print_share
+    assert largest is not None      # volume_share was not None
+    print(f"largest single print {largest * 100:.2f}% of volume",
+          file=sys.stderr)
+    if notional > vol:
+        print("note: the crosses take a larger share of notional than of "
+              "volume, which is what happens when they print away from the "
+              "day's average rather than at it.", file=sys.stderr)
+
+    gap = vwap_gap(events, windows)
+    if gap.with_auctions is None:
+        return 0
+    print(f"VWAP with auctions   {gap.with_auctions:.6f}", file=sys.stderr)
+    if gap.without_auctions is None:
+        print("note: every trade in this file is inside an auction window, so "
+              "there is no continuous benchmark to compare against. Check "
+              "--open-window and --close-window.", file=sys.stderr)
+        return 0
+    print(f"VWAP without         {gap.without_auctions:.6f}", file=sys.stderr)
+    if gap.auction_only is not None:
+        print(f"VWAP of the crosses  {gap.auction_only:.6f}", file=sys.stderr)
+    bps = gap.difference_bps
+    assert bps is not None
+    print(f"benchmark difference {bps:+.2f} bps", file=sys.stderr)
+    if abs(bps) >= 1:
+        print("note: an execution report is exposed to that difference "
+              "whenever it does not say which of the two benchmarks it used. "
+              "Neither is wrong; they answer different questions.",
+              file=sys.stderr)
+
+    if not args.output:
+        return 0
+    kept = exclude_auctions(events, windows)
+    n = _write(kept, args.output, as_float=args.as_float)
+    print(f"wrote {n} continuous event(s) to {args.output}", file=sys.stderr)
+    return 0
+
+
 def _cmd_reconcile(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -2271,6 +2362,37 @@ def build_parser() -> argparse.ArgumentParser:
     p_rs.add_argument("--list-limit", type=int, default=20, metavar="N",
                       help="how many ties to list (default: 20)")
     p_rs.set_defaults(func=_cmd_resolution)
+
+
+    p_au = sub.add_parser("auctions",
+                          help="separate the opening and closing crosses from "
+                               "the continuous session, and price the "
+                               "benchmark difference that follows")
+    _add_input_args(p_au)
+    p_au.add_argument("--calendar", required=True, metavar="CSV",
+                      help="CSV of date,kind[,close,name]; the windows come "
+                           "from it so an early close puts the cross where "
+                           "the venue actually shut")
+    p_au.add_argument("--first-day", default=None, metavar="YYYY-MM-DD",
+                      help="state the first day the calendar covers instead "
+                           "of inferring it from the exceptions in it")
+    p_au.add_argument("--last-day", default=None, metavar="YYYY-MM-DD",
+                      help="state the last day the calendar covers")
+    p_au.add_argument("--open-window", type=parse_interval, default=0,
+                      metavar="D",
+                      help="how long after the open the cross may print "
+                           "(default: 0, which holds a print stamped exactly "
+                           "at the bell and nothing else)")
+    p_au.add_argument("--close-window", type=parse_interval, default=0,
+                      metavar="D", help="how long before the close, likewise")
+    p_au.add_argument("--lead", type=parse_interval, default=0, metavar="D",
+                      help="how long after the bell the cross may still be "
+                           "published")
+    p_au.add_argument("-o", "--output", default=None,
+                      help="write the continuous events, crosses removed")
+    p_au.add_argument("--as-float", action="store_true",
+                      help="write numeric values instead of strings")
+    p_au.set_defaults(func=_cmd_auctions)
 
 
     p_rc = sub.add_parser("reconcile",

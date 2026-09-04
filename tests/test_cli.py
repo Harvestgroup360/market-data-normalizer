@@ -1117,3 +1117,107 @@ def test_seasonality_refuses_a_file_without_a_value_column(tmp_path, capsys):
     assert main(["seasonality", str(path), "--session", "00:00-04:00",
                  "--bucket", "1h"]) == 1
     assert "error:" in capsys.readouterr().err
+
+
+# -- auctions --------------------------------------------------------------
+
+def _auction_fixture(tmp_path, early=None):
+    """A ten-day CSV with an opening and closing cross each day."""
+    import datetime as _dt
+    from datetime import date as _date, time as _time
+    from mdnorm import Session
+    from mdnorm.calendars import read_calendar_csv
+
+    session = Session(start=_time(9, 30), end=_time(16, 0),
+                      tz="America/New_York")
+    days, d = [], _date(2026, 1, 5)
+    while len(days) < 10:
+        if d.weekday() < 5:
+            days.append(d)
+        d += _dt.timedelta(days=1)
+
+    cal_path = tmp_path / "cal.csv"
+    with open(cal_path, "w", encoding="utf-8") as fh:
+        fh.write("date,kind,close\n")
+        if early is not None:
+            fh.write(f"{days[early]},early_close,13:00\n")
+    cal = read_calendar_csv(str(cal_path), session, first_day=days[0],
+                            last_day=days[-1])
+
+    rows = ["ts,price,size,symbol"]
+    for day in days:
+        span = cal.session_on(day)
+        assert span is not None
+        o, c = span
+        rows.append(f"{o},100.00,180000,X")
+        for i in range(1, (c - o) // (60 * 10**9)):
+            rows.append(f"{o + i * 60 * 10**9},100.00,1200,X")
+        rows.append(f"{c},101.00,760000,X")
+    trades = tmp_path / "trades.csv"
+    trades.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    return str(trades), str(cal_path), days
+
+
+def _auction_args(trades, cal, *extra, days=None):
+    args = ["auctions", trades, "--calendar", cal, "--session", "09:30-16:00",
+            "--tz", "America/New_York", "--ts-unit", "ns"]
+    if days:
+        args += ["--first-day", str(days[0]), "--last-day", str(days[-1])]
+    return args + list(extra)
+
+
+def test_auctions_splits_the_crosses_from_the_book(tmp_path, capsys):
+    trades, cal, days = _auction_fixture(tmp_path)
+    assert main(_auction_args(trades, cal, days=days)) == 0
+    err = capsys.readouterr().err
+    assert "days                 10" in err
+    assert "auction windows      20" in err
+    assert "  in an auction      20" in err
+
+
+def test_auctions_prices_the_benchmark_difference(tmp_path, capsys):
+    trades, cal, days = _auction_fixture(tmp_path)
+    assert main(_auction_args(trades, cal, days=days)) == 0
+    err = capsys.readouterr().err
+    assert "VWAP with auctions" in err
+    assert "VWAP without" in err
+    assert "benchmark difference +" in err
+    assert "they answer different questions" in err
+
+
+def test_auctions_finds_the_cross_on_a_half_day(tmp_path, capsys):
+    """The regular close would have missed it by three hours."""
+    trades, cal, days = _auction_fixture(tmp_path, early=4)
+    assert main(_auction_args(trades, cal, days=days)) == 0
+    err = capsys.readouterr().err
+    assert "  in an auction      20" in err        # all ten closes found
+
+
+def test_auctions_does_not_let_the_session_filter_drop_the_close(tmp_path, capsys):
+    """The shared --session filter is half-open and would eat the bell print."""
+    trades, cal, days = _auction_fixture(tmp_path)
+    assert main(_auction_args(trades, cal, days=days)) == 0
+    err = capsys.readouterr().err
+    assert "  in an auction      20" in err
+
+
+def test_auctions_requires_a_session(tmp_path, capsys):
+    trades, cal, _ = _auction_fixture(tmp_path)
+    assert main(["auctions", trades, "--calendar", cal, "--ts-unit", "ns"]) == 1
+    assert "--session is required" in capsys.readouterr().err
+
+
+def test_auctions_writes_the_continuous_events(tmp_path):
+    trades, cal, days = _auction_fixture(tmp_path)
+    out = tmp_path / "continuous.csv"
+    assert main(_auction_args(trades, cal, "-o", str(out), days=days)) == 0
+    rows = list(csv.DictReader(open(out)))
+    assert all(r["size"] not in ("180000", "760000") for r in rows)
+
+
+def test_auctions_refuses_a_calendar_that_covers_nothing(tmp_path, capsys):
+    trades, _, _ = _auction_fixture(tmp_path)
+    other = tmp_path / "other.csv"
+    other.write_text("date,kind\n2030-01-02,holiday\n", encoding="utf-8")
+    assert main(_auction_args(trades, str(other))) == 1
+    assert "error:" in capsys.readouterr().err

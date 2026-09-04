@@ -602,6 +602,57 @@ for `AsOfSeries.delayed`: by_ns=412000 for the typical case, 3900000 for the
 case worth sizing against.
 ```
 
+### The crosses are not points on the tape
+
+The opening and closing auctions are single prints, at a single price,
+aggregating orders that never met each other in a book. Treating them as
+ordinary trades is wrong in a direction that flatters:
+
+```python
+from mdnorm import auction_windows, auction_report, vwap_gap
+
+windows = auction_windows(days, calendar)     # from the calendar, not a constant
+auction_report(trades, windows).volume_share  # what went through the crosses
+vwap_gap(trades, windows).difference_bps      # what that does to the benchmark
+```
+
+**An auction print has no aggressor.** Nobody crossed a spread; a clearing
+price was computed. The tick rule and the quote rule will still return a side,
+because those functions always return a side, and it is an artefact of where
+the last continuous print happened to sit.
+
+**Execution benchmarks are where it costs money.** A VWAP with the closing
+cross in it is dominated by one print. A strategy that never touches the
+auction, scored against that benchmark, is being measured against a price it
+could not have obtained; a strategy that only trades the auction beats it by
+construction. `vwap_gap` reports both numbers and the distance between them.
+
+**Auctions are not inferred.** No condition-code guessing, no rule that a
+print ten times the median must be a cross — on a busy day that rule
+reclassifies ordinary blocks and the resulting statistic describes the
+threshold rather than the market. Windows come from a `TradingCalendar`, so a
+half-day's cross lands where the venue actually closed rather than three hours
+later. The window extents default to zero: wide enough for a print stamped at
+the bell and nothing else, because "thirty seconds, everyone uses that" is a
+constant that differs by venue and by decade.
+
+Nothing is deleted. `split_auctions` hands back both halves, and
+`largest_print_share` is measured even with no windows at all — a file where
+one print is a tenth of the day has a cross in it whether or not anything has
+been told where.
+
+```console
+$ mdnorm auctions trades.csv --calendar us_2026.csv --session 09:30-16:00 \
+      --tz America/New_York --ts-unit ns
+trades               3730
+  in an auction      20
+volume in auctions   67.86%
+notional in auctions 67.89%
+VWAP with auctions   100.103008
+VWAP without         100.008100
+benchmark difference +9.49 bps
+```
+
 ### Stored in nanoseconds is not measured in nanoseconds
 
 Every timestamp here is an integer nanosecond. That is a storage decision. A
@@ -1268,6 +1319,7 @@ $ mdnorm ticks prices.csv --table ticks.csv
 $ mdnorm arrival feed.csv --interval 1s
 $ mdnorm seasonality volume.csv --session 09:30-16:00 --bucket 5m
 $ mdnorm resolution trades.jsonl
+$ mdnorm auctions trades.csv --calendar us_2026.csv --session 09:30-16:00
 ```
 
 Also available as `python -m mdnorm`.
