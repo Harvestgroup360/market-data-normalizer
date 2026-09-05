@@ -62,6 +62,18 @@ from .costs import (
     cost_report,
     estimate,
 )
+from .independence import (
+    EffectiveSample,
+    Span,
+    autocorrelation,
+    concurrency,
+    deflate_t_stat,
+    effective_sample_size,
+    effective_sample_size_series,
+    label_spans,
+    read_spans_csv,
+    uniqueness,
+)
 from .instruments import (
     Segment,
     SymbolAssignment,
@@ -263,7 +275,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.30.0"
+__version__ = "1.31.0"
 
 __all__ = [
     "MarketEvent",
@@ -326,6 +338,16 @@ __all__ = [
     "exclude_auctions",
     "auction_report",
     "vwap_gap",
+    "Span",
+    "EffectiveSample",
+    "label_spans",
+    "concurrency",
+    "uniqueness",
+    "effective_sample_size",
+    "autocorrelation",
+    "effective_sample_size_series",
+    "deflate_t_stat",
+    "read_spans_csv",
     "ReturnMethod",
     "column",
     "timestamps",

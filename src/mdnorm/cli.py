@@ -26,6 +26,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm seasonality volume.csv --session 09:30-16:00 --bucket 5m
     mdnorm resolution trades.jsonl
     mdnorm auctions trades.csv --calendar us_2026.csv --session 09:30-16:00
+    mdnorm independence --count 1000 --horizon 5 --t-stat 2.1
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -53,6 +54,9 @@ from .instruments import (SymbolMap, key_by_instrument,
 from .arrival import (as_received, as_stamped, delay_report,
                       read_arrivals_csv, view_gap)
 from .calendars import read_calendar_csv
+from .independence import (deflate_t_stat, effective_sample_size,
+                           effective_sample_size_series,
+                           label_spans, read_spans_csv)
 from .auctions import (auction_report, auction_windows,
                        exclude_auctions, vwap_gap)
 from .resolution import (classification_risk, detect_resolution,
@@ -1675,6 +1679,81 @@ def _cmd_auctions(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_independence(args: argparse.Namespace) -> int:
+    if args.spans:
+        try:
+            spans = read_spans_csv(args.spans, start_column=args.start_field,
+                                   end_column=args.end_field)
+        except (KeyError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        sample = effective_sample_size(spans)
+        source = f"{args.spans} ({len(spans)} span(s))"
+    elif args.series:
+        try:
+            rows = read_samples_csv(args.series, ts_column=args.ts_field,
+                                    value_column=args.value_field)
+        except (KeyError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        if args.max_lag is None:
+            print("error: --max-lag is required with --series. How far the "
+                  "dependence reaches is a property of your data, and a "
+                  "default would rescale the answer without saying so",
+                  file=sys.stderr)
+            return 1
+        try:
+            sample = effective_sample_size_series([r.value for r in rows],
+                                                  max_lag=args.max_lag)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        source = f"{args.series} ({len(rows)} observation(s))"
+    elif args.count is not None and args.horizon is not None:
+        sample = effective_sample_size(
+            label_spans(args.count, horizon=args.horizon, step=args.step))
+        source = (f"{args.count} labels, horizon {args.horizon}, "
+                  f"step {args.step}")
+    else:
+        print("error: give --spans, or --series, or both --count and "
+              "--horizon", file=sys.stderr)
+        return 1
+
+    ratio, inflation = sample.ratio, sample.inflation
+    print(f"source               {source}", file=sys.stderr)
+    print(f"nominal sample       {sample.nominal}", file=sys.stderr)
+    print(f"effective sample     {sample.effective:.2f}"
+          + ("  (estimated)" if sample.estimated else "  (exact)"),
+          file=sys.stderr)
+    if ratio is None or inflation is None:
+        print("note: nothing to measure — no labels, or none of them carry "
+              "any independent information.", file=sys.stderr)
+        return 0
+    print(f"ratio                {ratio * 100:.1f}%", file=sys.stderr)
+    print(f"t-statistic inflated {inflation:.3f}x", file=sys.stderr)
+
+    if sample.estimated:
+        print("note: this figure comes from the sample autocorrelation, which "
+              "is itself noisy. Read it as an order of magnitude, not as a "
+              "number to quote.", file=sys.stderr)
+
+    if args.t_stat is not None:
+        raw = Decimal(args.t_stat)
+        adjusted = deflate_t_stat(raw, sample)
+        assert adjusted is not None      # inflation was not None
+        print(f"t-statistic given    {raw}", file=sys.stderr)
+        print(f"t-statistic adjusted {adjusted:.3f}", file=sys.stderr)
+        if raw >= 2 > adjusted:
+            print("note: that crosses the conventional two-sigma line in the "
+                  "wrong direction. The overlap did it, not the strategy.",
+                  file=sys.stderr)
+    elif inflation > Decimal("1.5"):
+        print("note: every t-statistic, confidence interval and p-value "
+              "computed on the nominal count is overstated by that factor. "
+              "Pass --t-stat to see what it does to yours.", file=sys.stderr)
+    return 0
+
+
 def _cmd_reconcile(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -2393,6 +2472,34 @@ def build_parser() -> argparse.ArgumentParser:
     p_au.add_argument("--as-float", action="store_true",
                       help="write numeric values instead of strings")
     p_au.set_defaults(func=_cmd_auctions)
+
+
+    p_in = sub.add_parser("independence",
+                          help="count how many independent observations a set "
+                               "of overlapping labels actually carries")
+    p_in.add_argument("--count", type=int, default=None, metavar="N",
+                      help="number of labels, for the regular case")
+    p_in.add_argument("--horizon", type=int, default=None, metavar="N",
+                      help="how many observations forward each label looks")
+    p_in.add_argument("--step", type=int, default=1, metavar="N",
+                      help="sampling interval between labels (default: 1)")
+    p_in.add_argument("--spans", default=None, metavar="CSV",
+                      help="CSV of start,end for irregular label windows")
+    p_in.add_argument("--series", default=None, metavar="CSV",
+                      help="CSV of ts_ns,value to estimate from "
+                           "autocorrelation instead")
+    p_in.add_argument("--max-lag", type=int, default=None, metavar="N",
+                      help="truncation lag for --series; required, because "
+                           "how far the dependence reaches is a property of "
+                           "your data")
+    p_in.add_argument("--t-stat", default=None, metavar="X",
+                      help="a t-statistic computed on the nominal count, to "
+                           "see it adjusted")
+    p_in.add_argument("--start-field", default="start", metavar="NAME")
+    p_in.add_argument("--end-field", default="end", metavar="NAME")
+    p_in.add_argument("--ts-field", default="ts_ns", metavar="NAME")
+    p_in.add_argument("--value-field", default="value", metavar="NAME")
+    p_in.set_defaults(func=_cmd_independence)
 
 
     p_rc = sub.add_parser("reconcile",

@@ -11,9 +11,9 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Forty-two tagged releases, twenty-nine of them published to PyPI (the
+Forty-three tagged releases, thirty of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 1190 tests, and a type checker that passes clean.
+dependencies, Python 3.10+, 1237 tests, and a type checker that passes clean.
 
 | Layer | Modules |
 | --- | --- |
@@ -24,11 +24,11 @@ dependencies, Python 3.10+, 1190 tests, and a type checker that passes clean.
 | Microstructure | `book`, `consolidate`, `micro` |
 | Execution | `execution` |
 | Research | `align`, `arrival`, `features`, `labels`, `revisions`, `mixfreq`, `seasonality` |
-| Evaluation | `metrics`, `costs` |
+| Evaluation | `metrics`, `costs`, `independence` |
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
 Shipped since the last revision of this file: `mixfreq`, `membership`,
-`reconcile`, `calendars`, `fx`, `ticksize`, `arrival`, `seasonality`, `resolution` and `auctions`. The first two were the items that stood under
+`reconcile`, `calendars`, `fx`, `ticksize`, `arrival`, `seasonality`, `resolution`, `auctions` and `independence`. The first two were the items that stood under
 *Under consideration* below; the other four were not on the list. `reconcile` is
 here because comparing two sources of the same series is the check people run
 before trusting either, and nothing in the library did it. A slow series now carries the
@@ -159,6 +159,22 @@ to the thirty seconds everybody uses, since that constant differs by venue and
 by decade. Nothing is inferred from print size: a rule that calls anything ten
 times the median a cross reclassifies ordinary blocks on a busy day, and the
 statistic that comes out describes the threshold instead of the market.
+
+`independence` is the newest and it is the first module here that sits
+between two others rather than beside them. `labels` has produced overlapping
+forward returns since early on, and `purged_splits` has removed the training
+rows whose label windows reach into a test block — which stops the overlap
+leaking across a split and does nothing about it inflating the sample within
+one. A thousand daily observations of a five-day label carry about two hundred
+pieces of information, so every t-statistic, Sharpe and confidence interval
+computed on the thousand is out by a factor of roughly 2.2, in the flattering
+direction, silently. The overlap case is exact arithmetic: the labels state
+their own windows, so counting how many are live at each point gives the
+effective total with no model behind it. The autocorrelation case is an
+estimate and is marked as one, with the sum truncated at the first
+non-positive lag, because continuing into the noise can report an effective
+sample larger than the nominal one — the single outcome this module exists to
+rule out.
 
 ## Asked for
 

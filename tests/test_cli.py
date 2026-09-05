@@ -1221,3 +1221,74 @@ def test_auctions_refuses_a_calendar_that_covers_nothing(tmp_path, capsys):
     other.write_text("date,kind\n2030-01-02,holiday\n", encoding="utf-8")
     assert main(_auction_args(trades, str(other))) == 1
     assert "error:" in capsys.readouterr().err
+
+
+# -- independence ----------------------------------------------------------
+
+def test_independence_counts_the_overlap_exactly(capsys):
+    assert main(["independence", "--count", "1000", "--horizon", "5"]) == 0
+    err = capsys.readouterr().err
+    assert "nominal sample       1000" in err
+    assert "(exact)" in err
+    assert "t-statistic inflated 2.232x" in err
+
+
+def test_independence_adjusts_a_t_statistic(capsys):
+    assert main(["independence", "--count", "1000", "--horizon", "5",
+                 "--t-stat", "2.1"]) == 0
+    err = capsys.readouterr().err
+    assert "t-statistic adjusted 0.941" in err
+    assert "wrong direction" in err
+
+
+def test_independence_says_nothing_alarming_when_labels_do_not_overlap(capsys):
+    assert main(["independence", "--count", "100", "--horizon", "5",
+                 "--step", "5", "--t-stat", "2.1"]) == 0
+    err = capsys.readouterr().err
+    assert "ratio                100.0%" in err
+    assert "t-statistic adjusted 2.100" in err
+    assert "wrong direction" not in err
+
+
+def test_independence_reads_irregular_spans(tmp_path, capsys):
+    p = tmp_path / "spans.csv"
+    p.write_text("start,end\n0,10\n0,10\n50,60\n", encoding="utf-8")
+    assert main(["independence", "--spans", str(p)]) == 0
+    err = capsys.readouterr().err
+    assert "nominal sample       3" in err
+    assert "effective sample     2.00" in err
+
+
+def test_independence_estimates_from_a_series(tmp_path, capsys):
+    import random
+    rng = random.Random(3)
+    rows, x = ["ts_ns,value"], 0.0
+    for i in range(2000):
+        x = 0.6 * x + rng.gauss(0, 1)
+        rows.append(f"{i},{x:.8f}")
+    p = tmp_path / "ret.csv"
+    p.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    assert main(["independence", "--series", str(p), "--max-lag", "60"]) == 0
+    err = capsys.readouterr().err
+    assert "(estimated)" in err
+    assert "order of magnitude" in err
+
+
+def test_independence_requires_a_lag_for_a_series(tmp_path, capsys):
+    p = tmp_path / "ret.csv"
+    p.write_text("ts_ns,value\n1,0.5\n2,0.6\n", encoding="utf-8")
+    assert main(["independence", "--series", str(p)]) == 1
+    assert "--max-lag is required" in capsys.readouterr().err
+
+
+def test_independence_needs_something_to_measure(capsys):
+    assert main(["independence"]) == 1
+    assert "give --spans, or --series" in capsys.readouterr().err
+
+
+def test_independence_refuses_a_constant_series(tmp_path, capsys):
+    p = tmp_path / "flat.csv"
+    p.write_text("ts_ns,value\n" + "".join(f"{i},1\n" for i in range(50)),
+                 encoding="utf-8")
+    assert main(["independence", "--series", str(p), "--max-lag", "5"]) == 1
+    assert "constant series" in capsys.readouterr().err

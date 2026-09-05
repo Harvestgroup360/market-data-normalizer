@@ -602,6 +602,60 @@ for `AsOfSeries.delayed`: by_ns=412000 for the typical case, 3900000 for the
 case worth sizing against.
 ```
 
+### How many observations you actually have
+
+A five-day forward return sampled every day gives you a thousand rows and
+about two hundred pieces of information. Every t-statistic, Sharpe,
+confidence interval and p-value computed on the thousand is overstated by
+roughly the square root of five, and nothing in the arithmetic complains:
+
+```python
+from mdnorm import label_spans, effective_sample_size, deflate_t_stat
+
+sample = effective_sample_size(label_spans(1_000, horizon=5))
+sample.nominal, sample.effective     # 1000, 200.8
+sample.inflation                     # 2.232x on every t-statistic
+deflate_t_stat(Decimal("2.1"), sample)   # 0.941
+```
+
+`forward_returns` produces exactly those overlapping labels and
+`purged_splits` already removes the training rows whose windows reach into a
+test block. This is the other half of the same problem: purging stops the
+overlap leaking *across* a split, and nothing stops it inflating the sample
+*within* one.
+
+**Overlap is arithmetic, not an estimate.** Given each label's window you can
+count how many are live at every point. A label sharing its window with four
+others is worth a fifth of an observation; summing that gives the effective
+count exactly, with no model and no assumption. `uniqueness` exposes the
+per-label figure and `concurrency` the step function underneath it.
+
+**Autocorrelation is an estimate, and it says so.** For a return series with
+no explicit windows there is only the sample autocorrelation, which is itself
+noisy, so `effective_sample_size_series` marks its answer `estimated`. The
+sum stops at the first non-positive autocorrelation — past that the terms are
+noise whose signs cancel arbitrarily and can produce an effective sample
+*larger* than the real one, which is the one direction this module exists to
+rule out. On an AR(1) it lands on the closed form `(1-φ)/(1+φ)`, which the
+test suite checks.
+
+**No default lag, no default horizon, no silent correction.** How far the
+dependence reaches is a property of your data. `deflate_t_stat` returns the
+adjusted figure and the report keeps both counts, because a statistic that
+has quietly been divided by something is harder to argue with than one that
+shows its working.
+
+```console
+$ mdnorm independence --count 1000 --horizon 5 --t-stat 2.1
+nominal sample       1000
+effective sample     200.80  (exact)
+ratio                20.1%
+t-statistic inflated 2.232x
+t-statistic adjusted 0.941
+note: that crosses the conventional two-sigma line in the wrong direction.
+The overlap did it, not the strategy.
+```
+
 ### The crosses are not points on the tape
 
 The opening and closing auctions are single prints, at a single price,
@@ -1320,6 +1374,7 @@ $ mdnorm arrival feed.csv --interval 1s
 $ mdnorm seasonality volume.csv --session 09:30-16:00 --bucket 5m
 $ mdnorm resolution trades.jsonl
 $ mdnorm auctions trades.csv --calendar us_2026.csv --session 09:30-16:00
+$ mdnorm independence --count 1000 --horizon 5 --t-stat 2.1
 ```
 
 Also available as `python -m mdnorm`.

@@ -3,6 +3,41 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.31.0] - 2026-09-05
+
+### Added
+- `independence`: how many independent observations a set of overlapping
+  labels actually carries. A five-day forward return sampled daily gives a
+  thousand rows and about two hundred pieces of information, and every
+  statistic computed on the thousand is overstated by roughly the square root
+  of five.
+- This closes a hole between two modules that were already here. `labels`
+  produces the overlapping windows and `purged_splits` stops them leaking
+  across a split; nothing stopped them inflating the sample within one.
+- `effective_sample_size` is **exact**. Given each label's window it counts
+  how many are live at every point: a label sharing its window with four
+  others is worth a fifth of an observation. No model, no assumption, and
+  `estimated` is False for that reason. `uniqueness` and `concurrency` expose
+  the per-label figure and the step function underneath it.
+- `effective_sample_size_series` estimates the same thing from
+  autocorrelation for a series with no explicit windows, and marks itself
+  `estimated`. The sum stops at the first non-positive autocorrelation:
+  continuing into the noise adds terms whose signs cancel arbitrarily and can
+  report an effective sample **larger** than the nominal one, which is the
+  single direction this module exists to prevent. On an AR(1) it lands on the
+  closed form (1-phi)/(1+phi), which the tests check at two values of phi.
+- `deflate_t_stat` rescales a statistic computed on the nominal count and
+  returns `None` rather than a figure with nothing behind it. Nothing is
+  corrected silently and the report keeps both counts.
+- No default truncation lag and no default horizon. How far the dependence
+  reaches is a property of the data, and a constant chosen here would rescale
+  the answer while leaving its shape intact.
+- `mdnorm independence --count 1000 --horizon 5 --t-stat 2.1`, which also
+  takes `--spans` for irregular windows and `--series` for the estimated
+  route.
+- 47 tests, including the AR(1) closed-form checks and one asserting that a
+  publishable t of 2.1 becomes 0.941 once the overlap is accounted for.
+
 ## [1.30.0] - 2026-09-04
 
 ### Added
