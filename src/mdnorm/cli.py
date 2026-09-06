@@ -27,6 +27,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm resolution trades.jsonl
     mdnorm auctions trades.csv --calendar us_2026.csv --session 09:30-16:00
     mdnorm independence --count 1000 --horizon 5 --t-stat 2.1
+    mdnorm staleness marks.csv --min-run 3
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -54,6 +55,7 @@ from .instruments import (SymbolMap, key_by_instrument,
 from .arrival import (as_received, as_stamped, delay_report,
                       read_arrivals_csv, view_gap)
 from .calendars import read_calendar_csv
+from .staleness import runs, smoothing_bias, staleness_report
 from .independence import (deflate_t_stat, effective_sample_size,
                            effective_sample_size_series,
                            label_spans, read_spans_csv)
@@ -1754,6 +1756,79 @@ def _cmd_independence(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_staleness(args: argparse.Namespace) -> int:
+    try:
+        rows = read_samples_csv(args.input, ts_column=args.ts_field,
+                                value_column=args.value_field)
+    except (KeyError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    values = [r.value for r in rows]
+
+    rep = staleness_report(values, min_run=args.min_run)
+    print(f"observations         {rep.observations}", file=sys.stderr)
+    unchanged, in_runs = rep.unchanged_share, rep.in_runs_share
+    if unchanged is None:
+        print("note: a single observation has nothing to be unchanged from.",
+              file=sys.stderr)
+        return 0
+    print(f"unchanged            {rep.unchanged} ({unchanged * 100:.2f}%)",
+          file=sys.stderr)
+    label = f"runs of {args.min_run}+"
+    print(f"{label:<21}{rep.runs}", file=sys.stderr)
+    print(f"longest run          {rep.longest_run}", file=sys.stderr)
+    assert in_runs is not None
+    print(f"inside a run         {rep.in_runs} ({in_runs * 100:.2f}%)",
+          file=sys.stderr)
+    if rep.runs:
+        print("note: a flat stretch is not proof of a stale feed. An illiquid "
+              "instrument genuinely does not trade, and the two produce "
+              "identical rows.", file=sys.stderr)
+
+    if args.list_runs:
+        shown = 0
+        for r in runs(values, min_run=args.min_run):
+            print(f"  index {r.start}  x{r.length}  value {r.value}",
+                  file=sys.stderr)
+            shown += 1
+            if shown >= args.list_limit:
+                print(f"  ... ({rep.runs - shown} more)", file=sys.stderr)
+                break
+
+    if not args.returns:
+        print("note: pass --returns if the column is already a return series, "
+              "to estimate what smoothing is hiding.", file=sys.stderr)
+        return 0
+
+    try:
+        bias = smoothing_bias(values)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(f"autocorrelation      {bias.autocorrelation:+.4f}", file=sys.stderr)
+    if not bias.fits:
+        print("note: a two-period average cannot produce an autocorrelation "
+              "above 0.5, so whatever is in this series is not simple "
+              "staleness — a trend, a longer memory, or an overlapping "
+              "sampling window. No adjustment is offered.", file=sys.stderr)
+        return 0
+    ratio = bias.variance_ratio
+    under, inflation = bias.volatility_understated, bias.sharpe_inflation
+    assert ratio is not None and under is not None and inflation is not None
+    assert bias.weight_current is not None
+    print(f"weight on today      {bias.weight_current:.3f}", file=sys.stderr)
+    print(f"variance reported    {ratio:.4f} of the truth (modelled)",
+          file=sys.stderr)
+    print(f"volatility           {under:.4f}x understated", file=sys.stderr)
+    print(f"Sharpe               {inflation:.4f}x overstated", file=sys.stderr)
+    if inflation > Decimal("1.05"):
+        print("note: the mean survives an average and the volatility does "
+              "not, so a Sharpe, a beta and a correlation all move the "
+              "flattering way from this one cause. The figure is modelled, "
+              "not measured.", file=sys.stderr)
+    return 0
+
+
 def _cmd_reconcile(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -2500,6 +2575,26 @@ def build_parser() -> argparse.ArgumentParser:
     p_in.add_argument("--ts-field", default="ts_ns", metavar="NAME")
     p_in.add_argument("--value-field", default="value", metavar="NAME")
     p_in.set_defaults(func=_cmd_independence)
+
+
+    p_st = sub.add_parser("staleness",
+                          help="count the stretches a series did not move, "
+                               "and estimate what that hides")
+    p_st.add_argument("input", help="CSV of ts_ns,value")
+    p_st.add_argument("--min-run", type=int, default=2, metavar="N",
+                      help="length at which a flat stretch is worth reporting "
+                           "(default: 2). There is no length that suits every "
+                           "instrument and sampling interval")
+    p_st.add_argument("--returns", action="store_true",
+                      help="the column is already a return series; estimate "
+                           "the smoothing bias as well as counting runs")
+    p_st.add_argument("--list-runs", action="store_true",
+                      help="list the flat stretches")
+    p_st.add_argument("--list-limit", type=int, default=20, metavar="N",
+                      help="how many runs to list (default: 20)")
+    p_st.add_argument("--ts-field", default="ts_ns", metavar="NAME")
+    p_st.add_argument("--value-field", default="value", metavar="NAME")
+    p_st.set_defaults(func=_cmd_staleness)
 
 
     p_rc = sub.add_parser("reconcile",

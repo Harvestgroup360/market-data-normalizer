@@ -3,6 +3,44 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.32.0] - 2026-09-06
+
+### Added
+- `staleness`: how much of a series never moved, and what that hides. This is
+  the second time a module has been written to measure something the library
+  already warned about — `align` has said since it was written that a frozen
+  price is uncorrelated with everything and therefore reads as
+  diversification, and offered no way to find out how much of that you have.
+- `runs` and `staleness_report` count the flat stretches: unchanged
+  transitions, runs at or above a stated length, the longest one, and the
+  share of observations sitting inside one. Arithmetic, no interpretation.
+- No default `min_run`. Two identical one-minute prints on a liquid future is
+  a stall; two identical daily marks on a corporate bond is a Tuesday.
+- `smoothing_bias` estimates what a partly stale mark costs. A reported series
+  that carries some of the previous period's move is a moving average of the
+  true one, and a moving average has lower variance than what it averages —
+  so the volatility is understated and the Sharpe, the beta and every
+  correlation move the flattering way from one cause.
+- The adjustment is **modelled and marked as such**. It assumes
+  `reported = a*true[t] + b*true[t-1]` with `a+b=1`, infers the weights from
+  the first-order autocorrelation, and sets `modelled=True` so it can never be
+  confused with the run counts. On a synthetic series built with `a=0.7` it
+  recovers 0.72 and a variance ratio within 3% of the one the smoothing
+  actually removed.
+- A negative autocorrelation is bid-ask bounce or mean reversion, not
+  staleness, and returns weights of one and zero rather than claiming the
+  series is inflated. An autocorrelation above one half cannot come from a
+  two-period average at all, and `fits` comes back False with no figure
+  offered.
+- A series where every return is identical raises with a message pointing at
+  `staleness_report`, rather than the generic "constant series" error from the
+  autocorrelation it would otherwise hit.
+- `mdnorm staleness marks.csv --min-run 3`, with `--returns` for the smoothing
+  estimate and `--list-runs` for the stretches themselves.
+- 39 tests, including one that checks the recovered variance ratio against the
+  variance the smoothing genuinely removed, and one that checks the returned
+  weights reproduce the autocorrelation they were derived from.
+
 ## [1.31.0] - 2026-09-05
 
 ### Added

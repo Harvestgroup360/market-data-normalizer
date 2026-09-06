@@ -1292,3 +1292,93 @@ def test_independence_refuses_a_constant_series(tmp_path, capsys):
                  encoding="utf-8")
     assert main(["independence", "--series", str(p), "--max-lag", "5"]) == 1
     assert "constant series" in capsys.readouterr().err
+
+
+# -- staleness -------------------------------------------------------------
+
+def _flat_csv(path, values):
+    rows = ["ts_ns,value"] + [f"{i},{v}" for i, v in enumerate(values)]
+    path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    return str(path)
+
+
+def _smoothed_csv(path, a=0.7, n=3000, seed=19):
+    import random
+    rng = random.Random(seed)
+    true = [rng.gauss(0, 1) for _ in range(n)]
+    b = 1 - a
+    rows = ["ts_ns,value"] + [
+        f"{i},{a * true[i] + b * true[i - 1]:.10f}" for i in range(1, n)]
+    path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    return str(path)
+
+
+def test_staleness_counts_the_flat_stretches(tmp_path, capsys):
+    path = _flat_csv(tmp_path / "m.csv", [1, 1, 1, 2, 3, 3, 4, 4, 4, 4, 5])
+    assert main(["staleness", path, "--min-run", "3"]) == 0
+    err = capsys.readouterr().err
+    assert "observations         11" in err
+    assert "unchanged            6 (60.00%)" in err
+    assert "runs of 3+           2" in err
+    assert "longest run          4" in err
+
+
+def test_staleness_will_not_call_a_flat_stretch_a_stale_feed(tmp_path, capsys):
+    path = _flat_csv(tmp_path / "m.csv", [1, 1, 1, 2])
+    assert main(["staleness", path, "--min-run", "2"]) == 0
+    assert "not proof of a stale feed" in capsys.readouterr().err
+
+
+def test_staleness_lists_runs_on_request(tmp_path, capsys):
+    path = _flat_csv(tmp_path / "m.csv", [1, 1, 1, 2, 3, 3])
+    assert main(["staleness", path, "--min-run", "2", "--list-runs"]) == 0
+    err = capsys.readouterr().err
+    assert "index 0  x3" in err
+    assert "index 4  x2" in err
+
+
+def test_staleness_estimates_what_smoothing_hides(tmp_path, capsys):
+    path = _smoothed_csv(tmp_path / "r.csv", a=0.7)
+    assert main(["staleness", path, "--returns"]) == 0
+    err = capsys.readouterr().err
+    assert "autocorrelation      +0.3" in err
+    assert "weight on today      0.7" in err
+    assert "x understated" in err
+    assert "x overstated" in err
+    assert "modelled, not measured" in err
+
+
+def test_staleness_refuses_to_adjust_what_the_model_cannot_explain(
+        tmp_path, capsys):
+    import random
+    rng = random.Random(31)
+    x, vals = 0.0, []
+    for _ in range(3000):
+        x = 0.85 * x + rng.gauss(0, 1)
+        vals.append(round(x, 10))
+    path = _flat_csv(tmp_path / "trend.csv", vals)
+    assert main(["staleness", path, "--returns"]) == 0
+    err = capsys.readouterr().err
+    assert "cannot produce an autocorrelation above 0.5" in err
+    assert "No adjustment is offered" in err
+
+
+def test_staleness_points_at_the_returns_flag_when_it_is_absent(
+        tmp_path, capsys):
+    path = _flat_csv(tmp_path / "m.csv", [1, 1, 2])
+    assert main(["staleness", path, "--min-run", "2"]) == 0
+    assert "pass --returns" in capsys.readouterr().err
+
+
+def test_staleness_sends_a_frozen_series_back_to_the_run_counts(
+        tmp_path, capsys):
+    path = _flat_csv(tmp_path / "flat.csv", [0] * 60)
+    assert main(["staleness", path, "--returns"]) == 1
+    assert "staleness_report" in capsys.readouterr().err
+
+
+def test_staleness_refuses_a_file_without_a_value_column(tmp_path, capsys):
+    path = tmp_path / "bad.csv"
+    path.write_text("ts_ns\n1\n", encoding="utf-8")
+    assert main(["staleness", str(path)]) == 1
+    assert "error:" in capsys.readouterr().err

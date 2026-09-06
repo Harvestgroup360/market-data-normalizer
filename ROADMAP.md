@@ -11,15 +11,15 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Forty-three tagged releases, thirty of them published to PyPI (the
+Forty-four tagged releases, thirty-one of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 1237 tests, and a type checker that passes clean.
+dependencies, Python 3.10+, 1276 tests, and a type checker that passes clean.
 
 | Layer | Modules |
 | --- | --- |
 | Ingest | `normalizers`, `csvio`, `jsonl`, `streams`, `records`, `symbols` |
 | Instrument identity | `instruments`, `universe`, `membership` |
-| Cleaning | `quality`, `reconcile`, `ticksize`, `resolution` |
+| Cleaning | `quality`, `reconcile`, `ticksize`, `resolution`, `staleness` |
 | Aggregation | `bars`, `sessions`, `calendars`, `auctions`, `adjust`, `fx` |
 | Microstructure | `book`, `consolidate`, `micro` |
 | Execution | `execution` |
@@ -28,7 +28,7 @@ dependencies, Python 3.10+, 1237 tests, and a type checker that passes clean.
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
 Shipped since the last revision of this file: `mixfreq`, `membership`,
-`reconcile`, `calendars`, `fx`, `ticksize`, `arrival`, `seasonality`, `resolution`, `auctions` and `independence`. The first two were the items that stood under
+`reconcile`, `calendars`, `fx`, `ticksize`, `arrival`, `seasonality`, `resolution`, `auctions`, `independence` and `staleness`. The first two were the items that stood under
 *Under consideration* below; the other four were not on the list. `reconcile` is
 here because comparing two sources of the same series is the check people run
 before trusting either, and nothing in the library did it. A slow series now carries the
@@ -175,6 +175,23 @@ estimate and is marked as one, with the sum truncated at the first
 non-positive lag, because continuing into the noise can report an effective
 sample larger than the nominal one — the single outcome this module exists to
 rule out.
+
+`staleness` is the newest, and it is the second module written to measure
+something this library had already put in writing. `align` has warned since it
+was written that a frozen price is uncorrelated with everything and therefore
+reads as diversification; like the delay in `arrival`, that was advice with no
+instrument attached. The run counts are arithmetic and carry no
+interpretation, because a flat stretch on an illiquid instrument and a vendor
+repeating yesterday's mark produce identical rows and nothing in the data
+separates them. What the module does argue is the consequence: a reported
+series that carries part of the previous period's move is a moving average of
+the true one, a moving average has less variance than what it averages, and a
+lower volatility against an unchanged mean raises the Sharpe, lowers the beta
+and shrinks every correlation at once. That adjustment is a model rather than
+a measurement — a two-period average with weights inferred from the
+first-order autocorrelation — so it is flagged as modelled, it declines to
+treat a negative autocorrelation as staleness, and it refuses outright above
+an autocorrelation of one half, which a two-period average cannot produce.
 
 ## Asked for
 

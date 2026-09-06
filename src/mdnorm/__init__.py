@@ -155,6 +155,14 @@ from .resolution import (
     read_timestamps_csv,
     tie_groups,
 )
+from .staleness import (
+    Run,
+    SmoothingBias,
+    StalenessReport,
+    runs,
+    smoothing_bias,
+    staleness_report,
+)
 from .revisions import (
     Revision,
     RevisionSeries,
@@ -275,7 +283,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.31.0"
+__version__ = "1.32.0"
 
 __all__ = [
     "MarketEvent",
@@ -348,6 +356,12 @@ __all__ = [
     "effective_sample_size_series",
     "deflate_t_stat",
     "read_spans_csv",
+    "Run",
+    "StalenessReport",
+    "SmoothingBias",
+    "runs",
+    "staleness_report",
+    "smoothing_bias",
     "ReturnMethod",
     "column",
     "timestamps",

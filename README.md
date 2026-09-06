@@ -602,6 +602,64 @@ for `AsOfSeries.delayed`: by_ns=412000 for the typical case, 3900000 for the
 case worth sizing against.
 ```
 
+### A price that stopped moving is not a price that stopped being risky
+
+`align` has warned since it was written that a frozen price is uncorrelated
+with everything and therefore reads as diversification. It gave no way to find
+out how much of that you have:
+
+```python
+from mdnorm import staleness_report, smoothing_bias
+
+rep = staleness_report(marks, min_run=3)
+rep.unchanged_share, rep.longest_run    # 75%, 31 observations
+
+bias = smoothing_bias(returns)
+bias.weight_current                     # 0.721 — the rest arrives tomorrow
+bias.volatility_understated             # 0.773x
+bias.sharpe_inflation                   # 1.294x
+```
+
+**Repeated values are a fact; staleness is an interpretation.** An illiquid
+instrument genuinely does not trade for an hour, and a vendor carrying
+yesterday's mark forward produces identical rows. Nothing here decides which
+you have — `runs` and `staleness_report` count, and what makes a flat stretch
+suspicious is the instrument and the sampling interval, which is why there is
+no default `min_run`.
+
+**Smoothing is where the money is.** A reported series that partly reflects
+the previous period's move is a moving average of the true one, and a moving
+average has lower variance than what it averages. Lower measured volatility
+with the same mean is a higher Sharpe, a lower beta and a smaller correlation
+with everything else — four numbers moving the flattering way from one cause,
+with nothing raising an objection.
+
+**The adjustment is a model and says so.** `smoothing_bias` assumes the
+reported return is a two-period weighted average, infers the weights from the
+first-order autocorrelation and reports the implied understatement. The result
+carries `modelled=True`, so it can never be confused with the run counts,
+which are arithmetic. A negative autocorrelation is bid-ask bounce rather than
+staleness and returns weights of one and zero rather than pretending.
+
+**Where the model cannot fit, it refuses.** A two-period average cannot
+produce a first-order autocorrelation above one half, so a larger value is
+evidence of something else — a trend, a longer memory, an overlapping sampling
+window. `fits` comes back False and no figure is offered.
+
+```console
+$ mdnorm staleness returns.csv --returns
+observations         2999
+unchanged            0 (0.00%)
+autocorrelation      +0.3368
+weight on today      0.721
+variance reported    0.5975 of the truth (modelled)
+volatility           0.7730x understated
+Sharpe               1.2937x overstated
+```
+
+Nothing is unsmoothed in place and no repeated value is dropped. Both would be
+corrections applied to data whose cause has not been established.
+
 ### How many observations you actually have
 
 A five-day forward return sampled every day gives you a thousand rows and
@@ -1375,6 +1433,7 @@ $ mdnorm seasonality volume.csv --session 09:30-16:00 --bucket 5m
 $ mdnorm resolution trades.jsonl
 $ mdnorm auctions trades.csv --calendar us_2026.csv --session 09:30-16:00
 $ mdnorm independence --count 1000 --horizon 5 --t-stat 2.1
+$ mdnorm staleness marks.csv --min-run 3
 ```
 
 Also available as `python -m mdnorm`.
