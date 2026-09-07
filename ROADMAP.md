@@ -197,7 +197,7 @@ an autocorrelation of one half, which a two-period average cannot produce.
 
 **A native Rust port of the core normalization and calculation paths.**
 Requested three times now, independently, under
-[our LinkedIn post](https://www.linkedin.com/company/harvestgroup360) — for
+[our LinkedIn post](https://www.linkedin.com/company/harvestgroup-360) — for
 the normalization logic, for the calculators, and most recently with a
 specific question about the binding: PyO3 against a plain C ABI, from someone
 offering to work on the execution calculators. In every case the destination
