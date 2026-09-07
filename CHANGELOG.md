@@ -3,6 +3,53 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.33.0] - 2026-09-07
+
+### Added
+- `halts`: what a strategy did while the instrument could not be traded. The
+  tape goes quiet during a halt and a backtest reading it sees nothing
+  unusual — the last print stands, the features keep updating off it, and
+  every fill placed in that silence is a fill that could not have happened.
+- `Halt` windows are half-open like every other interval here, which means a
+  print stamped at the reopening time is tradable and one stamped at the halt
+  time is not. That is the correct reading: the reopening auction is the
+  first thing anybody can trade.
+- `unfillable` reports both a count share and a **value share**, and sums in
+  absolute terms so a short and a long of the same size cannot cancel into a
+  reassuring zero. A value share above a count share is the signature of the
+  problem: halts land on the days with the largest moves, so the decisions
+  taken during them are the big ones. On the worked example in the README,
+  half the decisions and 91.6% of the money.
+- Symbols with no halt record at all are returned in `unmatched_symbols`
+  rather than being reported as clean. A symbol that never halted and a
+  symbol whose halts were never loaded produce identical arithmetic, and only
+  one of them is good news.
+- `reopen_gaps` prices the move across each pause from the last tradable print
+  before it to the first one after it. Prints stamped inside the window are
+  excluded from both sides, because a late report of a pre-halt execution is
+  not the price the market reopened at and treating it as one understates the
+  gap.
+- `halt_report` measures halted time against the span the events themselves
+  cover rather than against an assumed session length, and sums over symbols,
+  so two names paused for the same hour is two instrument-hours — the
+  quantity a portfolio is actually exposed to.
+- Prints stamped inside a halt window are counted and **not interpreted**.
+  Usually a late report, occasionally a cross that is allowed to print,
+  sometimes a vendor with a broken clock; nothing here guesses which.
+- **Nothing is inferred.** No rule that a long enough quiet stretch is a halt:
+  on an illiquid name that fires constantly and the statistic becomes a
+  property of the threshold rather than of the market. Either the windows are
+  supplied or the report says it has none — the same position `auctions`
+  takes on crosses and `staleness` takes on flat stretches.
+- `split_halted` hands back both halves and `exclude_halted` the tradable one;
+  nothing is dropped on the caller's behalf. An unrecognised `kind` in a halt
+  file becomes `UNKNOWN` rather than an error, since a vendor inventing a code
+  should not stop a pipeline that only needs the window.
+- `mdnorm halts trades.csv --halts halts.csv --decisions fills.csv`, with
+  `-o` for the tradable events alone.
+- 39 tests, including the two boundary cases at each end of the window and one
+  that checks a short and a long of equal size do not net to zero.
+
 ## [1.32.0] - 2026-09-06
 
 ### Added

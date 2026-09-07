@@ -602,6 +602,67 @@ for `AsOfSeries.delayed`: by_ns=412000 for the typical case, 3900000 for the
 case worth sizing against.
 ```
 
+### A price you could not have traded at
+
+When an instrument is halted the tape goes quiet, and a backtest reading that
+tape sees nothing unusual. The last print stands, the features keep updating
+off it, and every fill placed in that silence is a fill that could not have
+happened:
+
+```python
+from mdnorm import halt_report, reopen_gaps, unfillable
+
+halt_report(events, halts).halted_share      # 25.6% of the covered span
+reopen_gaps(events, halts)[0].move_bps       # -1,834.8 across one pause
+unfillable(decisions, halts).value_share     # 91.6% of the money
+```
+
+**Halts are concentrated in exactly the wrong place.** An instrument is not
+paused on a quiet afternoon. It is paused on the day of the earnings leak, the
+guidance cut, the tender offer — the days carrying the largest moves in the
+sample. The fills a backtest invents during a halt are not a random slice of
+its trades; they come from the fattest part of the tail, and they land on the
+right side of it, because the strategy is reading a price that has not yet
+absorbed the news.
+
+**The count understates it and the value does not.** One decision in two on
+this input fell inside the pause, and those decisions carried 91.6 per cent of
+the money. A `value_share` above a `count_share` is the signature of the whole
+problem, which is why `unfillable` reports both and sums in absolute terms, so
+a short and a long of the same size cannot cancel into a reassuring zero.
+
+**The reopening move belongs to nobody.** A name halted at 41.15 and reopened
+at 33.60 fell eighteen per cent with no tradable print in between. Whoever
+held it took the loss; whoever "entered" during the pause entered at the stale
+price and was marked at the new one, which is not a trade. `reopen_gaps`
+prices every one of those.
+
+**Nothing is inferred.** There is no rule here that a long enough quiet
+stretch is a halt — on an illiquid name that rule fires constantly, and the
+resulting statistic is a property of the threshold rather than of the market.
+Either the windows are supplied, or the report says it has none. Symbols with
+no halt record at all are named rather than assumed clean.
+
+```console
+$ mdnorm halts trades.csv --halts halts.csv --decisions fills.csv
+events               30
+halts                1 across 1 symbol(s)
+halted time          10m
+longest halt         10m
+share of covered     25.64%
+reopening moves      (no tradable price existed across these)
+  AAA 10m  41.15 -> 33.6  -1834.8 bps
+decisions            4
+  unfillable         2 (50.00%)
+  by value           91.60%
+note: the value share exceeds the count share, which means the decisions taken
+while halted were the large ones.
+```
+
+Prints stamped inside a halt window are counted and not interpreted: usually a
+late report of a pre-halt execution, occasionally a cross that is allowed to
+print, sometimes a vendor with a broken clock.
+
 ### A price that stopped moving is not a price that stopped being risky
 
 `align` has warned since it was written that a frozen price is uncorrelated
@@ -1434,6 +1495,7 @@ $ mdnorm resolution trades.jsonl
 $ mdnorm auctions trades.csv --calendar us_2026.csv --session 09:30-16:00
 $ mdnorm independence --count 1000 --horizon 5 --t-stat 2.1
 $ mdnorm staleness marks.csv --min-run 3
+$ mdnorm halts trades.csv --halts halts.csv --decisions fills.csv
 ```
 
 Also available as `python -m mdnorm`.

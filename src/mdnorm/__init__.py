@@ -62,6 +62,21 @@ from .costs import (
     cost_report,
     estimate,
 )
+from .halts import (
+    Decision,
+    Halt,
+    HaltKind,
+    HaltReport,
+    ReopenGap,
+    Unfillable,
+    exclude_halted,
+    halt_report,
+    halted,
+    read_halts_csv,
+    reopen_gaps,
+    split_halted,
+    unfillable,
+)
 from .independence import (
     EffectiveSample,
     Span,
@@ -283,7 +298,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.32.0"
+__version__ = "1.33.0"
 
 __all__ = [
     "MarketEvent",
@@ -356,6 +371,19 @@ __all__ = [
     "effective_sample_size_series",
     "deflate_t_stat",
     "read_spans_csv",
+    "HaltKind",
+    "Halt",
+    "Decision",
+    "ReopenGap",
+    "HaltReport",
+    "Unfillable",
+    "halted",
+    "split_halted",
+    "exclude_halted",
+    "halt_report",
+    "reopen_gaps",
+    "unfillable",
+    "read_halts_csv",
     "Run",
     "StalenessReport",
     "SmoothingBias",

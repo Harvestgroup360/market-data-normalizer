@@ -28,6 +28,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm auctions trades.csv --calendar us_2026.csv --session 09:30-16:00
     mdnorm independence --count 1000 --horizon 5 --t-stat 2.1
     mdnorm staleness marks.csv --min-run 3
+    mdnorm halts trades.csv --halts halts.csv --decisions fills.csv
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -56,6 +57,8 @@ from .arrival import (as_received, as_stamped, delay_report,
                       read_arrivals_csv, view_gap)
 from .calendars import read_calendar_csv
 from .staleness import runs, smoothing_bias, staleness_report
+from .halts import (Decision, halt_report, read_halts_csv, reopen_gaps,
+                    split_halted, unfillable)
 from .independence import (deflate_t_stat, effective_sample_size,
                            effective_sample_size_series,
                            label_spans, read_spans_csv)
@@ -1829,6 +1832,114 @@ def _cmd_staleness(args: argparse.Namespace) -> int:
     return 0
 
 
+def _read_decisions(path: str, args: argparse.Namespace) -> List[Decision]:
+    import csv
+
+    from .fileio import open_text
+
+    out: List[Decision] = []
+    with open_text(path) as fh:
+        for i, row in enumerate(csv.DictReader(fh), start=2):
+            try:
+                raw = row.get(args.value_field) or ""
+                out.append(Decision(
+                    ts_ns=int(row[args.ts_field]),
+                    symbol=row[args.symbol_field],
+                    value=Decimal(raw) if raw.strip() else Decimal(0),
+                ))
+            except (KeyError, TypeError, ValueError, ArithmeticError) as exc:
+                raise ValueError(f"line {i}: {exc}")
+    return out
+
+
+def _cmd_halts(args: argparse.Namespace) -> int:
+    try:
+        events = _read_events(args)
+        halts = read_halts_csv(args.halts, symbol_column=args.symbol_field)
+    except (KeyError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if not events:
+        print("error: no events in input", file=sys.stderr)
+        return 1
+
+    rep = halt_report(events, halts)
+    print(f"events               {rep.events}", file=sys.stderr)
+    print(f"halts                {rep.halts} "
+          f"across {rep.symbols} symbol(s)", file=sys.stderr)
+    print(f"halted time          {_fmt_ns(rep.halted_ns)}", file=sys.stderr)
+    print(f"longest halt         {_fmt_ns(rep.longest_ns)}", file=sys.stderr)
+    share = rep.halted_share
+    if share is None:
+        print("note: the events cover no span, so there is nothing to take a "
+              "share of.", file=sys.stderr)
+    else:
+        print(f"share of covered     {share * 100:.2f}%", file=sys.stderr)
+    if rep.events_during:
+        during = rep.during_share
+        assert during is not None
+        print(f"printed while halted {rep.events_during} "
+              f"({during * 100:.2f}%)", file=sys.stderr)
+        print("note: a print inside a halt window is usually a late report of "
+              "a pre-halt execution. It is counted, not interpreted.",
+              file=sys.stderr)
+
+    shown = 0
+    for gap in reopen_gaps(events, halts):
+        bps = gap.move_bps
+        if bps is None:
+            continue
+        if shown == 0:
+            print("reopening moves      "
+                  "(no tradable price existed across these)", file=sys.stderr)
+        print(f"  {gap.halt.symbol} {_fmt_ns(gap.halt.duration_ns)}"
+              f"  {gap.last_before} -> {gap.first_after}"
+              f"  {bps:+.1f} bps", file=sys.stderr)
+        shown += 1
+        if shown >= args.list_limit:
+            print(f"  ... (limit {args.list_limit})", file=sys.stderr)
+            break
+
+    if args.decisions:
+        try:
+            decisions = _read_decisions(args.decisions, args)
+        except (KeyError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        u = unfillable(decisions, halts)
+        print(f"decisions            {u.decisions}", file=sys.stderr)
+        count = u.count_share
+        if count is None:
+            print("note: no decisions to place.", file=sys.stderr)
+        else:
+            print(f"  unfillable         {u.unfillable} "
+                  f"({count * 100:.2f}%)", file=sys.stderr)
+            value = u.value_share
+            if value is None:
+                print("note: every decision carried a value of zero, so only "
+                      "the count is meaningful.", file=sys.stderr)
+            else:
+                print(f"  by value           {value * 100:.2f}%",
+                      file=sys.stderr)
+                if value > count:
+                    print("note: the value share exceeds the count share, "
+                          "which means the decisions taken while halted were "
+                          "the large ones.", file=sys.stderr)
+        if u.unmatched_symbols:
+            names = ", ".join(u.unmatched_symbols[:8])
+            more = ("" if len(u.unmatched_symbols) <= 8
+                    else f" and {len(u.unmatched_symbols) - 8} more")
+            print(f"note: no halt records for {names}{more}. That is not the "
+                  "same as those symbols never halting.", file=sys.stderr)
+
+    if not args.output:
+        return 0
+    tradable, _ = split_halted(events, halts)
+    n = _write(tradable, args.output, as_float=args.as_float)
+    print(f"wrote {n} tradable event(s) to {args.output}", file=sys.stderr)
+    return 0
+
+
 def _cmd_reconcile(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -2595,6 +2706,35 @@ def build_parser() -> argparse.ArgumentParser:
     p_st.add_argument("--ts-field", default="ts_ns", metavar="NAME")
     p_st.add_argument("--value-field", default="value", metavar="NAME")
     p_st.set_defaults(func=_cmd_staleness)
+
+
+    p_ha = sub.add_parser("halts",
+                          help="find what a strategy did while the instrument "
+                               "could not be traded")
+    _add_input_args(p_ha)
+    p_ha.add_argument("--halts", required=True, metavar="CSV",
+                      help="CSV of symbol,start,end[,kind,reason]. Required: "
+                           "nothing here infers a halt from a quiet stretch, "
+                           "because on an illiquid name that rule fires "
+                           "constantly")
+    p_ha.add_argument("--decisions", default=None, metavar="CSV",
+                      help="CSV of ts_ns,symbol[,value] — the moments a "
+                           "strategy would have acted, to see how many of "
+                           "them fell inside a halt")
+    p_ha.add_argument("--list-limit", type=int, default=20, metavar="N",
+                      help="how many reopening moves to list (default: 20)")
+    p_ha.add_argument("--ts-field", default="ts_ns", metavar="NAME",
+                      help="timestamp column in --halts and --decisions")
+    p_ha.add_argument("--symbol-field", default="symbol", metavar="NAME",
+                      help="symbol column in --halts and --decisions")
+    p_ha.add_argument("--value-field", default="value", metavar="NAME",
+                      help="value column in --decisions; missing or blank "
+                           "counts as zero, which reports counts only")
+    p_ha.add_argument("-o", "--output", default=None,
+                      help="write the tradable events, halted ones removed")
+    p_ha.add_argument("--as-float", action="store_true",
+                      help="write numeric values instead of strings")
+    p_ha.set_defaults(func=_cmd_halts)
 
 
     p_rc = sub.add_parser("reconcile",

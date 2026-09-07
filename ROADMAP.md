@@ -11,16 +11,16 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Forty-four tagged releases, thirty-one of them published to PyPI (the
+Forty-five tagged releases, thirty-two of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 1276 tests, and a type checker that passes clean.
+dependencies, Python 3.10+, 1315 tests, and a type checker that passes clean.
 
 | Layer | Modules |
 | --- | --- |
 | Ingest | `normalizers`, `csvio`, `jsonl`, `streams`, `records`, `symbols` |
 | Instrument identity | `instruments`, `universe`, `membership` |
 | Cleaning | `quality`, `reconcile`, `ticksize`, `resolution`, `staleness` |
-| Aggregation | `bars`, `sessions`, `calendars`, `auctions`, `adjust`, `fx` |
+| Aggregation | `bars`, `sessions`, `calendars`, `auctions`, `halts`, `adjust`, `fx` |
 | Microstructure | `book`, `consolidate`, `micro` |
 | Execution | `execution` |
 | Research | `align`, `arrival`, `features`, `labels`, `revisions`, `mixfreq`, `seasonality` |
@@ -28,7 +28,7 @@ dependencies, Python 3.10+, 1276 tests, and a type checker that passes clean.
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
 Shipped since the last revision of this file: `mixfreq`, `membership`,
-`reconcile`, `calendars`, `fx`, `ticksize`, `arrival`, `seasonality`, `resolution`, `auctions`, `independence` and `staleness`. The first two were the items that stood under
+`reconcile`, `calendars`, `fx`, `ticksize`, `arrival`, `seasonality`, `resolution`, `auctions`, `independence`, `staleness` and `halts`. The first two were the items that stood under
 *Under consideration* below; the other four were not on the list. `reconcile` is
 here because comparing two sources of the same series is the check people run
 before trusting either, and nothing in the library did it. A slow series now carries the
