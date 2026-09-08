@@ -602,6 +602,63 @@ for `AsOfSeries.delayed`: by_ns=412000 for the typical case, 3900000 for the
 case worth sizing against.
 ```
 
+### The absence of a row is not the absence of an event
+
+A feed that stops delivering and a market that stops trading produce the same
+thing: nothing. Every calculation downstream reads the silence as information:
+
+```python
+from mdnorm import coverage_report, panel_coverage
+
+rep = coverage_report(events, min_gap_ns=5 * MINUTE, calendar=cal,
+                      halts=halts, start_ns=first, end_ns=last)
+rep.explained_share        # 97.27% of the silence was the venue being shut
+rep.unexplained_ns         # 5h54m nobody has accounted for
+rep.longest_unexplained_ns # 3h10m — a feed that stopped mid-session
+```
+
+**A gap has to be explained before it is a gap.** Most silences are ordinary,
+and a raw gap count is mostly weekends. `explain_gaps` subtracts closed
+sessions using a `TradingCalendar` and pauses using the `halts` windows, then
+reports the residual — which is the only part that says anything about the
+feed. The three components are times rather than one label, because a Friday
+outage running into a weekend is part missing data and part closed venue.
+
+**Give the bounds, or a feed that stopped is invisible.** Without `start_ns`
+and `end_ns` a gap only exists between two observations, so a symbol that goes
+quiet and never returns produces nothing at all — its last print has nothing
+after it to be distant from. That is the case worth catching, because
+instruments stop printing when something has happened to them. With the
+bounds, a named symbol that never appears is one gap the width of the period.
+
+**Names go missing when they are in trouble.** A cross-sectional rank or
+z-score over "the instruments that printed" is computed on a universe whose
+width moves, and the ones that drop out are not a random sample.
+`panel_coverage` counts the width at every point instead of averaging it away.
+
+**No default threshold, and the calendar is recorded.** Five minutes without a
+print is remarkable on a liquid future and unremarkable on a corporate bond,
+so `min_gap_ns` is required — the same objection `halts` makes to inferring a
+pause. A report built without a calendar carries `calendar=False`, because
+counting every night as missing data is right for a venue that never closes
+and badly wrong for one that does.
+
+```console
+$ mdnorm coverage feed.csv --min-gap 5m --calendar us_2026.csv \
+    --session 09:30-16:00 --tz America/New_York --panel 1d \
+    --since 1773149400000000000 --until 1773432000000000000
+events               5481
+symbols              3
+covered span         307h30m
+gaps over 5m         15
+  total silence      216h24m
+  venue was shut     210h
+  halted             30m
+  unexplained        5h54m
+longest unexplained  3h10m
+explained            97.27% of the silence
+```
+
 ### A price you could not have traded at
 
 When an instrument is halted the tape goes quiet, and a backtest reading that
@@ -1496,6 +1553,7 @@ $ mdnorm auctions trades.csv --calendar us_2026.csv --session 09:30-16:00
 $ mdnorm independence --count 1000 --horizon 5 --t-stat 2.1
 $ mdnorm staleness marks.csv --min-run 3
 $ mdnorm halts trades.csv --halts halts.csv --decisions fills.csv
+$ mdnorm coverage feed.csv --min-gap 5m --calendar us_2026.csv
 ```
 
 Also available as `python -m mdnorm`.

@@ -3,6 +3,52 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.34.0] - 2026-09-08
+
+### Added
+- `coverage`: which silences are ordinary and which are missing data. A feed
+  that stops delivering and a market that stops trading produce the same
+  thing — nothing — and every calculation downstream reads the silence as
+  information.
+- `explain_gaps` splits each gap three ways: time the venue was shut (from a
+  `TradingCalendar`), time the instrument was halted (from `halts` windows),
+  and the residual. Times rather than a single label, because one gap is
+  usually several things at once — a Friday outage running into a weekend is
+  part missing data and part closed venue, and calling the whole thing either
+  would be wrong. The three always sum to the duration.
+- **`start_ns` and `end_ns` on `find_gaps` and `coverage_report`.** Without
+  them a gap only exists between two observations, so a feed that stops
+  halfway through the sample produces no gap at all — its last print has
+  nothing after it to be distant from. That is the case worth catching:
+  instruments stop printing when something has happened to them. With the
+  bounds, a symbol named in `symbols` that never appears at all is one gap the
+  width of the whole period. This was found by running the CLI against a
+  constructed feed and noticing the stopped symbol was not in the output.
+- `panel_coverage` counts how many instruments printed in each bucket of a
+  grid. A cross-sectional rank or z-score over "the instruments that printed"
+  is computed on a universe whose width moves, and the names that drop out are
+  not a random sample. It reports the narrowest, median and widest width and
+  the share of points where every symbol was present.
+- **No default gap threshold.** Five minutes without a print is remarkable on
+  a liquid future and unremarkable on a corporate bond, so `min_gap_ns` is
+  required — the same objection `halts` makes to inferring a pause from a
+  quiet stretch and `staleness` makes to interpreting a flat one.
+- A report built with no calendar carries `calendar=False`, and the CLI says
+  so in a note. Counting every night and weekend as missing data is right for
+  a venue that never closes and badly misleading for one that does; the flag
+  is there so the two cannot be confused.
+- A calendar that says nothing about a date cannot be read as open, so a gap
+  running past the end of the calendar's range counts as closed rather than
+  as unexplained — consistent with `calendars` refusing to answer outside
+  `covers`.
+- `mdnorm coverage feed.csv --min-gap 5m --calendar us_2026.csv`, with
+  `--halts`, `--panel` for the cross-sectional width, `--since`/`--until` for
+  the stated period and `--list-gaps` for the unexplained stretches, longest
+  first.
+- 43 tests, including one asserting the three components always sum to the
+  gap, and one that a feed stopping mid-session is invisible without bounds
+  and caught with them.
+
 ## [1.33.0] - 2026-09-07
 
 ### Added

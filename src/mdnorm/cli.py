@@ -29,6 +29,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm independence --count 1000 --horizon 5 --t-stat 2.1
     mdnorm staleness marks.csv --min-run 3
     mdnorm halts trades.csv --halts halts.csv --decisions fills.csv
+    mdnorm coverage feed.csv --min-gap 5m --calendar us_2026.csv
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -59,6 +60,8 @@ from .calendars import read_calendar_csv
 from .staleness import runs, smoothing_bias, staleness_report
 from .halts import (Decision, halt_report, read_halts_csv, reopen_gaps,
                     split_halted, unfillable)
+from .coverage import (coverage_report, explain_gaps, find_gaps,
+                       panel_coverage)
 from .independence import (deflate_t_stat, effective_sample_size,
                            effective_sample_size_series,
                            label_spans, read_spans_csv)
@@ -1940,6 +1943,120 @@ def _cmd_halts(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_coverage(args: argparse.Namespace) -> int:
+    from datetime import date as _date
+
+    try:
+        events = _read_events(args)
+    except (KeyError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if not events:
+        print("error: no events in input", file=sys.stderr)
+        return 1
+
+    cal = None
+    if args.calendar:
+        if not args.session:
+            print("error: --calendar needs --session, since a calendar "
+                  "describes the exceptions to a recurring window and not "
+                  "the window itself", file=sys.stderr)
+            return 1
+        try:
+            session = parse_session(args.session, args.tz)
+            cal = read_calendar_csv(
+                args.calendar, session, name=args.calendar,
+                first_day=_date.fromisoformat(args.first_day)
+                if args.first_day else None,
+                last_day=_date.fromisoformat(args.last_day)
+                if args.last_day else None)
+        except (KeyError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+
+    halts = []
+    if args.halts:
+        try:
+            halts = read_halts_csv(args.halts, symbol_column=args.symbol_field)
+        except (KeyError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+
+    stamps = [e.ts_ns for e in events]
+    since: Optional[int] = None
+    until: Optional[int] = None
+    if args.since is not None or args.until is not None:
+        since = args.since if args.since is not None else min(stamps)
+        until = args.until if args.until is not None else max(stamps) + 1
+    rep = coverage_report(events, min_gap_ns=args.min_gap, calendar=cal,
+                          halts=halts, start_ns=since, end_ns=until)
+    print(f"events               {rep.events}", file=sys.stderr)
+    print(f"symbols              {rep.symbols}", file=sys.stderr)
+    print(f"covered span         {_fmt_ns(rep.span_ns)}", file=sys.stderr)
+    print(f"gaps over {_fmt_ns(args.min_gap):<10} {rep.gaps}", file=sys.stderr)
+    if not rep.gaps:
+        print("note: nothing was quiet for that long. A threshold that finds "
+              "no gaps is not the same as a feed with none.", file=sys.stderr)
+        return 0
+
+    print(f"  total silence      {_fmt_ns(rep.gap_ns)}", file=sys.stderr)
+    print(f"  venue was shut     {_fmt_ns(rep.outside_session_ns)}",
+          file=sys.stderr)
+    print(f"  halted             {_fmt_ns(rep.halt_ns)}", file=sys.stderr)
+    print(f"  unexplained        {_fmt_ns(rep.unexplained_ns)}",
+          file=sys.stderr)
+    print(f"longest unexplained  {_fmt_ns(rep.longest_unexplained_ns)}",
+          file=sys.stderr)
+    share = rep.explained_share
+    if share is not None:
+        print(f"explained            {share * 100:.2f}% of the silence",
+              file=sys.stderr)
+    if not rep.calendar:
+        print("note: no calendar was given, so every night and weekend is "
+              "counted as unexplained. That is right for a venue that never "
+              "closes and badly wrong for one that does.", file=sys.stderr)
+
+    if args.list_gaps:
+        shown = 0
+        gaps = explain_gaps(
+            find_gaps(events, min_gap_ns=args.min_gap, start_ns=since,
+                      end_ns=until),
+            calendar=cal, halts=halts)
+        for g in sorted(gaps, key=lambda x: -x.unexplained_ns):
+            if not g.unexplained_ns:
+                break
+            print(f"  {g.symbol}  {g.start_ns} -> {g.end_ns}"
+                  f"  {_fmt_ns(g.unexplained_ns)} unexplained",
+                  file=sys.stderr)
+            shown += 1
+            if shown >= args.list_limit:
+                print(f"  ... (limit {args.list_limit})", file=sys.stderr)
+                break
+
+    if since is None:
+        print("note: no --since/--until, so a symbol whose feed stopped part "
+              "way through has no gap to report — its last observation has "
+              "nothing after it to be distant from.", file=sys.stderr)
+
+    if args.panel:
+        pan = panel_coverage(events, start_ns=min(stamps),
+                             end_ns=max(stamps) + 1, step_ns=args.panel)
+        print(f"panel step           {_fmt_ns(args.panel)}", file=sys.stderr)
+        print(f"  points             {pan.points}", file=sys.stderr)
+        print(f"  width min/med/max  {pan.narrowest}/{pan.median}/"
+              f"{pan.widest} of {pan.symbols}", file=sys.stderr)
+        full = pan.full_share
+        if full is not None:
+            print(f"  every symbol       {full * 100:.2f}% of points",
+                  file=sys.stderr)
+            if full < 1:
+                print("note: a cross-sectional rank or z-score over these "
+                      "points is computed on a universe whose width moves, "
+                      "and the names that drop out are rarely a random "
+                      "sample.", file=sys.stderr)
+    return 0
+
+
 def _cmd_reconcile(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -2735,6 +2852,45 @@ def build_parser() -> argparse.ArgumentParser:
     p_ha.add_argument("--as-float", action="store_true",
                       help="write numeric values instead of strings")
     p_ha.set_defaults(func=_cmd_halts)
+
+
+    p_cv = sub.add_parser("coverage",
+                          help="separate the silences a calendar and a halt "
+                               "file explain from the ones nothing does")
+    _add_input_args(p_cv)
+    p_cv.add_argument("--min-gap", type=parse_interval, required=True,
+                      metavar="D",
+                      help="how long a silence has to be before it counts. "
+                           "Required: five minutes without a print is "
+                           "remarkable on a liquid future and unremarkable "
+                           "on a corporate bond")
+    p_cv.add_argument("--calendar", default=None, metavar="CSV",
+                      help="CSV of date,kind[,close,name]; without it every "
+                           "night and weekend is reported as unexplained")
+    p_cv.add_argument("--halts", default=None, metavar="CSV",
+                      help="CSV of symbol,start,end[,kind,reason] to account "
+                           "for the pauses as well")
+    p_cv.add_argument("--first-day", default=None, metavar="YYYY-MM-DD",
+                      help="state the first day the calendar covers")
+    p_cv.add_argument("--last-day", default=None, metavar="YYYY-MM-DD",
+                      help="state the last day the calendar covers")
+    p_cv.add_argument("--panel", type=parse_interval, default=None,
+                      metavar="D",
+                      help="also count how many symbols printed in each "
+                           "bucket of this width")
+    p_cv.add_argument("--since", type=int, default=None, metavar="NS",
+                      help="first nanosecond the sample was meant to cover; "
+                           "give it, or a feed that stopped early reports "
+                           "nothing")
+    p_cv.add_argument("--until", type=int, default=None, metavar="NS",
+                      help="last nanosecond the sample was meant to cover")
+    p_cv.add_argument("--list-gaps", action="store_true",
+                      help="list the unexplained stretches, longest first")
+    p_cv.add_argument("--list-limit", type=int, default=20, metavar="N",
+                      help="how many to list (default: 20)")
+    p_cv.add_argument("--symbol-field", default="symbol", metavar="NAME",
+                      help="symbol column in --halts")
+    p_cv.set_defaults(func=_cmd_coverage)
 
 
     p_rc = sub.add_parser("reconcile",

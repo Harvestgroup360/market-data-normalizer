@@ -62,6 +62,15 @@ from .costs import (
     cost_report,
     estimate,
 )
+from .coverage import (
+    CoverageReport,
+    Gap,
+    PanelCoverage,
+    coverage_report,
+    explain_gaps,
+    find_gaps,
+    panel_coverage,
+)
 from .halts import (
     Decision,
     Halt,
@@ -298,7 +307,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.33.0"
+__version__ = "1.34.0"
 
 __all__ = [
     "MarketEvent",
@@ -371,6 +380,13 @@ __all__ = [
     "effective_sample_size_series",
     "deflate_t_stat",
     "read_spans_csv",
+    "Gap",
+    "CoverageReport",
+    "PanelCoverage",
+    "find_gaps",
+    "explain_gaps",
+    "coverage_report",
+    "panel_coverage",
     "HaltKind",
     "Halt",
     "Decision",
