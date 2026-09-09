@@ -11,9 +11,9 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Forty-six tagged releases, thirty-three of them published to PyPI (the
+Forty-seven tagged releases, thirty-four of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 1358 tests, and a type checker that passes clean.
+dependencies, Python 3.10+, 1400 tests, and a type checker that passes clean.
 
 | Layer | Modules |
 | --- | --- |
@@ -25,10 +25,11 @@ dependencies, Python 3.10+, 1358 tests, and a type checker that passes clean.
 | Execution | `execution` |
 | Research | `align`, `arrival`, `features`, `labels`, `revisions`, `mixfreq`, `seasonality` |
 | Evaluation | `metrics`, `costs`, `independence` |
+| Reproducibility | `provenance` |
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
 Shipped since the last revision of this file: `mixfreq`, `membership`,
-`reconcile`, `calendars`, `fx`, `ticksize`, `arrival`, `seasonality`, `resolution`, `auctions`, `independence`, `staleness`, `halts` and `coverage`. The first two were the items that stood under
+`reconcile`, `calendars`, `fx`, `ticksize`, `arrival`, `seasonality`, `resolution`, `auctions`, `independence`, `staleness`, `halts`, `coverage` and `provenance`. The first two were the items that stood under
 *Under consideration* below; the other four were not on the list. `reconcile` is
 here because comparing two sources of the same series is the check people run
 before trusting either, and nothing in the library did it. A slow series now carries the

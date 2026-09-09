@@ -288,6 +288,20 @@ from .micro import (
     trade_imbalance,
 )
 from .pipeline import Pipeline
+from .provenance import (
+    Digest,
+    Drift,
+    DriftKind,
+    InputRef,
+    Manifest,
+    Verification,
+    digest_bytes,
+    digest_file,
+    manifest,
+    read_manifest,
+    verify,
+    write_manifest,
+)
 from .quality import QualityIssue, clean, find_issues
 from .records import bar_to_dict, event_to_dict, to_records
 from .schema import EventType, MarketEvent, Side
@@ -307,7 +321,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.34.0"
+__version__ = "1.35.0"
 
 __all__ = [
     "MarketEvent",
@@ -576,6 +590,18 @@ __all__ = [
     "write_jsonl",
     "event_from_dict",
     "Pipeline",
+    "Digest",
+    "InputRef",
+    "Manifest",
+    "DriftKind",
+    "Drift",
+    "Verification",
+    "digest_bytes",
+    "digest_file",
+    "manifest",
+    "verify",
+    "read_manifest",
+    "write_manifest",
     "canonical_symbol",
     "epoch_to_ns",
     "iso_to_ns",

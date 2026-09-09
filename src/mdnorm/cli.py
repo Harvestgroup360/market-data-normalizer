@@ -30,6 +30,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm staleness marks.csv --min-run 3
     mdnorm halts trades.csv --halts halts.csv --decisions fills.csv
     mdnorm coverage feed.csv --min-gap 5m --calendar us_2026.csv
+    mdnorm provenance run.json --verify
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -62,6 +63,8 @@ from .halts import (Decision, halt_report, read_halts_csv, reopen_gaps,
                     split_halted, unfillable)
 from .coverage import (coverage_report, explain_gaps, find_gaps,
                        panel_coverage)
+from .provenance import (DriftKind, manifest, read_manifest, verify,
+                         write_manifest)
 from .independence import (deflate_t_stat, effective_sample_size,
                            effective_sample_size_series,
                            label_spans, read_spans_csv)
@@ -2057,6 +2060,73 @@ def _cmd_coverage(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_provenance(args: argparse.Namespace) -> int:
+    from decimal import InvalidOperation
+
+    if args.verify:
+        try:
+            recorded = read_manifest(args.manifest)
+        except (OSError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        params: Optional[dict] = None
+        if args.parameter:
+            params = {}
+            for item in args.parameter:
+                key, _, value = item.partition("=")
+                if not _:
+                    print(f"error: --parameter wants key=value, got {item!r}",
+                          file=sys.stderr)
+                    return 1
+                params[key] = value
+        result = verify(recorded, parameters=params,
+                        check_version=not args.ignore_version)
+        print(f"command              {recorded.command}", file=sys.stderr)
+        print(f"recorded with        {recorded.library} "
+              f"{recorded.version}", file=sys.stderr)
+        print(f"fingerprint          {recorded.fingerprint[:12]}",
+              file=sys.stderr)
+        print(f"inputs               {len(recorded.inputs)}", file=sys.stderr)
+        if params is None:
+            print("note: no --parameter given, so only the files were "
+                  "checked. The arguments are where reproducibility usually "
+                  "fails, because nobody had to edit a file to change them.",
+                  file=sys.stderr)
+        if result.reproducible:
+            print("result               reproducible", file=sys.stderr)
+            return 0
+        print(f"result               {len(result.drifts)} difference(s)",
+              file=sys.stderr)
+        for d in result.drifts:
+            print(f"  {d}", file=sys.stderr)
+        print("note: nothing here says which side is right. A changed input "
+              "may be a correction or a corruption, and that is not a "
+              "question this library can answer.", file=sys.stderr)
+        return 1
+
+    params_out = {}
+    for item in args.parameter or ():
+        key, _, value = item.partition("=")
+        if not _:
+            print(f"error: --parameter wants key=value, got {item!r}",
+                  file=sys.stderr)
+            return 1
+        params_out[key] = value
+    try:
+        m = manifest(command=args.command_name, inputs=args.input or (),
+                     outputs=args.output or (), parameters=params_out,
+                     note=args.note)
+        write_manifest(m, args.manifest)
+    except (OSError, TypeError, ValueError, InvalidOperation) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(f"fingerprint          {m.fingerprint[:12]}", file=sys.stderr)
+    print(f"inputs               {len(m.inputs)}", file=sys.stderr)
+    print(f"parameters           {len(m.parameters)}", file=sys.stderr)
+    print(f"wrote {args.manifest}", file=sys.stderr)
+    return 0
+
+
 def _cmd_reconcile(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -2891,6 +2961,31 @@ def build_parser() -> argparse.ArgumentParser:
     p_cv.add_argument("--symbol-field", default="symbol", metavar="NAME",
                       help="symbol column in --halts")
     p_cv.set_defaults(func=_cmd_coverage)
+
+
+    p_pv = sub.add_parser("provenance",
+                          help="record what a run read and was told, or check "
+                               "a recorded run still holds")
+    p_pv.add_argument("manifest", help="the manifest JSON to write or verify")
+    p_pv.add_argument("--verify", action="store_true",
+                      help="re-read the inputs and report every difference")
+    p_pv.add_argument("--command-name", default="", metavar="NAME",
+                      help="what was run, for the record")
+    p_pv.add_argument("-i", "--input", action="append", metavar="FILE",
+                      help="a file the run read; repeatable")
+    p_pv.add_argument("-o", "--output", action="append", metavar="FILE",
+                      help="a file the run wrote; repeatable")
+    p_pv.add_argument("--parameter", action="append", metavar="KEY=VALUE",
+                      help="an argument the run was given; repeatable. On "
+                           "--verify these are the arguments it is being "
+                           "repeated with")
+    p_pv.add_argument("--ignore-version", action="store_true",
+                      help="do not report a different library version as a "
+                           "difference")
+    p_pv.add_argument("--note", default="", metavar="TEXT",
+                      help="free text; deliberately not part of the "
+                           "fingerprint")
+    p_pv.set_defaults(func=_cmd_provenance)
 
 
     p_rc = sub.add_parser("reconcile",

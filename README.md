@@ -602,6 +602,70 @@ for `AsOfSeries.delayed`: by_ns=412000 for the typical case, 3900000 for the
 case worth sizing against.
 ```
 
+### A result you cannot reproduce is not a result
+
+Every other module here refuses to guess a constant. `metrics` will not invent
+the number of trials a search ran, `coverage` will not pick a gap threshold,
+`halts` will not infer a pause, `independence` will not choose a truncation
+lag. Each refusal hands the caller a decision — and until now nothing wrote
+down what they decided:
+
+```python
+from mdnorm import manifest, verify, read_manifest, write_manifest
+
+m = manifest(command="sharpe", inputs=["pnl.csv"],
+             parameters={"trials": 500, "risk_free": "0.04"})
+write_manifest(m, "run.json")          # fingerprint ed731c772bdd
+
+v = verify(read_manifest("run.json"), parameters={"trials": 50})
+v.reproducible                          # False
+v.drifts                                # pnl.csv: digest, trials: 500 -> 50
+```
+
+**The parameters are the part that goes missing.** An input that changes is
+usually noticed, because somebody had to change it. A trial count that was 500
+in the run and 50 in the write-up is noticed by nobody, and it is the whole
+difference between a deflated Sharpe that survives and one that does not. A
+manifest records the arguments beside the data because they are the same kind
+of fact.
+
+**A fingerprint that includes the clock answers no question.** Two runs of the
+same pipeline over the same inputs with the same arguments must fingerprint
+identically, so `created_ns` and the free-text note are excluded and only what
+would change the numbers is covered. Outputs are excluded too, deliberately:
+the same fingerprint with different results is the finding.
+
+**Floats are refused.** `0.1` is not a value, it is a rendering of one, and the
+rendering differs by platform. Pass a `str` or a `Decimal` and the manifest
+records what you meant; pass a float and it raises rather than promising to
+reproduce something it can only approximate.
+
+**An edited manifest is refused.** `read_manifest` re-derives the fingerprint
+from the contents and raises if the file disagrees with itself. A manifest
+somebody has corrected by hand is worse than no manifest, because it carries
+the authority of a record while stating something that never happened.
+
+**Nothing here judges.** `verify` reports what moved and stops. Whether a
+changed input is a correction or a corruption is not a question a library can
+answer, and a tool that decided would be trusted for a judgment it is not
+entitled to make.
+
+```console
+$ mdnorm provenance run.json --verify --parameter trials=50
+command              sharpe
+recorded with        market-data-normalizer 1.35.0
+fingerprint          ed731c772bdd
+inputs               1
+result               2 difference(s)
+  pnl.csv: digest 'b264dd52615d' -> 'db1608907c45'
+  trials: parameter '500' -> '50'
+note: nothing here says which side is right. A changed input may be a
+correction or a corruption, and that is not a question this library can answer.
+```
+
+Exit status is non-zero when a run does not reproduce, so this drops into a
+scheduled check without any parsing.
+
 ### The absence of a row is not the absence of an event
 
 A feed that stops delivering and a market that stops trading produce the same
@@ -1554,6 +1618,7 @@ $ mdnorm independence --count 1000 --horizon 5 --t-stat 2.1
 $ mdnorm staleness marks.csv --min-run 3
 $ mdnorm halts trades.csv --halts halts.csv --decisions fills.csv
 $ mdnorm coverage feed.csv --min-gap 5m --calendar us_2026.csv
+$ mdnorm provenance run.json --verify --parameter trials=500
 ```
 
 Also available as `python -m mdnorm`.

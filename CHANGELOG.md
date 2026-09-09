@@ -3,6 +3,58 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.35.0] - 2026-09-09
+
+### Added
+- `provenance`: what a run read, what it was told, and whether it still holds.
+  Every other module in this library refuses to guess a constant — `metrics`
+  will not invent a trial count, `coverage` will not pick a gap threshold,
+  `halts` will not infer a pause, `independence` will not choose a truncation
+  lag. Each refusal hands the caller a decision, and until now nothing
+  recorded what they decided.
+- `manifest` records inputs by content digest, the arguments beside them, the
+  library version and the Python version. `verify` re-reads the inputs and
+  reports every difference in one pass: a changed digest, a missing file, a
+  changed or added parameter, a different library version.
+- **Parameters are checked, and that is the point.** A changed input is
+  usually noticed because somebody had to change it. A trial count that was
+  500 in the run and 50 in the write-up is noticed by nobody, and it is the
+  difference between a deflated Sharpe that survives and one that does not.
+- `Manifest.fingerprint` excludes `created_ns` and the free-text note, so two
+  runs that would produce the same numbers fingerprint identically. It
+  excludes outputs as well, deliberately: the same fingerprint with different
+  results is the finding, not a contradiction.
+- **Float parameters raise.** `0.1` is a rendering of a value rather than the
+  value, and the rendering differs by platform and Python version. `str`,
+  `int`, `bool`, `Decimal` and `None` are accepted; a float is refused with a
+  message saying why rather than fingerprinting something the manifest cannot
+  promise to reproduce.
+- `read_manifest` re-derives the fingerprint from the file's contents and
+  raises if the two disagree. A manifest edited by hand is worse than no
+  manifest, because it carries the authority of a record while stating
+  something that never happened.
+- Digests are of the bytes rather than of the parsed content, so a CSV
+  re-exported with different line endings reads as a different file. That is
+  intended: the parse is what changed.
+- `verify` reports and does not judge. Whether a changed input is a correction
+  or a corruption is not a question a library can answer.
+- `mdnorm provenance run.json --command-name sharpe -i pnl.csv --parameter
+  trials=500` to write one, `--verify` to check one. Exit status is non-zero
+  when a run does not reproduce, so it drops into a scheduled check with no
+  parsing.
+- 42 tests, including one that two runs of the same thing fingerprint
+  identically, one that an edited manifest is refused, and three at the
+  package level that no exported name is duplicated or unresolvable.
+
+### Fixed
+- A name collision caught before release rather than after: the new module
+  originally exported `ChangeKind`, which `membership` has exported since
+  1.19.0 for index additions and deletions. Importing both into the package
+  namespace silently shadowed the older one. The new type is `DriftKind` and
+  its record is `Drift`; `mdnorm.ChangeKind` still resolves to the membership
+  enum, and there is now a check in the test suite that the package exports
+  no duplicate names.
+
 ## [1.34.0] - 2026-09-08
 
 ### Added
