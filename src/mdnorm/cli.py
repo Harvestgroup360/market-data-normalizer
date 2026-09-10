@@ -31,6 +31,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm halts trades.csv --halts halts.csv --decisions fills.csv
     mdnorm coverage feed.csv --min-gap 5m --calendar us_2026.csv
     mdnorm provenance run.json --verify
+    mdnorm extremes pnl.csv --sigma 5 --robust --tail 5
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -65,6 +66,8 @@ from .coverage import (coverage_report, explain_gaps, find_gaps,
                        panel_coverage)
 from .provenance import (DriftKind, manifest, read_manifest, verify,
                          write_manifest)
+from .extremes import (clip_effect, concentration, flag_extremes, spread,
+                       tail_contribution)
 from .independence import (deflate_t_stat, effective_sample_size,
                            effective_sample_size_series,
                            label_spans, read_spans_csv)
@@ -2127,6 +2130,102 @@ def _cmd_provenance(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_extremes(args: argparse.Namespace) -> int:
+    try:
+        rows = read_samples_csv(args.input, ts_column=args.ts_field,
+                                value_column=args.value_field)
+    except (KeyError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    values = [r.value for r in rows]
+    if not values:
+        print("error: no observations in input", file=sys.stderr)
+        return 1
+
+    print(f"observations         {len(values)}", file=sys.stderr)
+    for robust in (False, True):
+        try:
+            sp = spread(values, robust=robust)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        label = "robust  " if robust else "ordinary"
+        print(f"{label} centre {sp.centre:+.8f}  scale {sp.scale:.8f}",
+              file=sys.stderr)
+    ordinary = spread(values, robust=False).scale
+    rob = spread(values, robust=True).scale
+    if rob and ordinary / rob > Decimal("1.1"):
+        print(f"note: the ordinary scale is {ordinary / rob:.2f}x the robust "
+              "one, which means the extremes are inflating the ruler they "
+              "would be measured against.", file=sys.stderr)
+
+    try:
+        plain = flag_extremes(values, sigma=args.sigma, robust=False)
+        robust_hits = flag_extremes(values, sigma=args.sigma, robust=True)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(f"at {args.sigma} sigma", file=sys.stderr)
+    print(f"  ordinary score     {len(plain)}", file=sys.stderr)
+    print(f"  robust score       {len(robust_hits)}", file=sys.stderr)
+    if len(robust_hits) > len(plain):
+        print("note: the robust score finds more. The difference is the "
+              "observations that were large enough to hide themselves.",
+              file=sys.stderr)
+
+    chosen = robust_hits if args.robust else plain
+    if args.list_extremes:
+        for e in chosen[:args.list_limit]:
+            print(f"  index {e.index}  value {e.value}  score {e.score:+.2f}",
+                  file=sys.stderr)
+        if len(chosen) > args.list_limit:
+            print(f"  ... ({len(chosen) - args.list_limit} more)",
+                  file=sys.stderr)
+
+    if args.tail:
+        rep = tail_contribution(values, n=args.tail)
+        print(f"largest {rep.counted} by size", file=sys.stderr)
+        print(f"  their total        {rep.tail_total}", file=sys.stderr)
+        print(f"  whole total        {rep.total}", file=sys.stderr)
+        print(f"  without them       {rep.rest}", file=sys.stderr)
+        share = rep.tail_share
+        if share is not None:
+            print(f"  share of the total {share * 100:.2f}%", file=sys.stderr)
+
+    if args.concentration is not None:
+        n = concentration(values, share=args.concentration)
+        if n is None:
+            print("concentration        n/a (the total is not positive, so a "
+                  "share of it has no meaning)", file=sys.stderr)
+        else:
+            print(f"concentration        {n} observation(s) make "
+                  f"{args.concentration * 100:.0f}% of the total",
+                  file=sys.stderr)
+
+    if args.clip is not None:
+        eff = clip_effect(values, sigma=args.clip, robust=args.robust)
+        print(f"clipping at {args.clip} sigma", file=sys.stderr)
+        print(f"  would touch        {eff.clipped}", file=sys.stderr)
+        print(f"  volatility         {eff.volatility_before:.8f} -> "
+              f"{eff.volatility_after:.8f}", file=sys.stderr)
+        under = eff.volatility_understated
+        shift = eff.sharpe_shift
+        if under is not None:
+            print(f"  understated to     {under:.4f}x", file=sys.stderr)
+        if shift is not None:
+            direction = "higher" if shift > 1 else "lower"
+            print(f"  Sharpe             {shift:.4f}x ({direction})",
+                  file=sys.stderr)
+            if shift < 1:
+                print("note: the clip lowered the Sharpe rather than raising "
+                      "it, which means the tail was one-sided and the profit "
+                      "went with it.", file=sys.stderr)
+        print("note: nothing was clipped. This is what clipping would do, "
+              "and the sigma you chose is a parameter — record it beside the "
+              "result.", file=sys.stderr)
+    return 0
+
+
 def _cmd_reconcile(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -2986,6 +3085,38 @@ def build_parser() -> argparse.ArgumentParser:
                       help="free text; deliberately not part of the "
                            "fingerprint")
     p_pv.set_defaults(func=_cmd_provenance)
+
+
+    p_ex = sub.add_parser("extremes",
+                          help="find the observations a sample rests on, and "
+                               "price what removing them would cost")
+    p_ex.add_argument("input", help="CSV of ts_ns,value")
+    p_ex.add_argument("--sigma", type=Decimal, required=True, metavar="X",
+                      help="how many scale units count as extreme. Required: "
+                           "a threshold chosen here would make the answer a "
+                           "property of this library")
+    p_ex.add_argument("--robust", action="store_true",
+                      help="use the median and the scaled median absolute "
+                           "deviation for the listing and for --clip; both "
+                           "scales are always reported")
+    p_ex.add_argument("--tail", type=int, default=None, metavar="N",
+                      help="report what the N largest observations by size "
+                           "contribute")
+    p_ex.add_argument("--concentration", type=Decimal, default=None,
+                      metavar="X",
+                      help="how few of the largest gains make this share of "
+                           "the total, e.g. 0.5")
+    p_ex.add_argument("--clip", type=Decimal, default=None, metavar="X",
+                      help="measure what winsorising at this many sigma "
+                           "would do. Nothing is written and nothing is "
+                           "clipped")
+    p_ex.add_argument("--list-extremes", action="store_true",
+                      help="list the flagged observations")
+    p_ex.add_argument("--list-limit", type=int, default=20, metavar="N",
+                      help="how many to list (default: 20)")
+    p_ex.add_argument("--ts-field", default="ts_ns", metavar="NAME")
+    p_ex.add_argument("--value-field", default="value", metavar="NAME")
+    p_ex.set_defaults(func=_cmd_extremes)
 
 
     p_rc = sub.add_parser("reconcile",

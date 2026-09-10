@@ -602,6 +602,76 @@ for `AsOfSeries.delayed`: by_ns=412000 for the typical case, 3900000 for the
 case worth sizing against.
 ```
 
+### A fat tail and a fat finger look identical
+
+One is the risk you are paid to carry, the other is a typo, and nothing in the
+number distinguishes them. So this measures what removing them would cost and
+removes nothing:
+
+```python
+from mdnorm import flag_extremes, clip_effect, concentration
+
+flag_extremes(returns, sigma=5, robust=True)     # 30 found
+flag_extremes(returns, sigma=5)                  # 0 found
+concentration(returns, share=Decimal("0.5"))     # 3 observations
+```
+
+**The outliers hide inside the ruler used to find them.** A z-score divides by
+a standard deviation computed from the same sample, and every extreme
+observation inflates it. Thirty contaminated points in a thousand raised the
+scale by 1.42x, which pushed all thirty from six sigma down to four and a bit
+— so at a five-sigma cut the ordinary score found **none of them** and the
+robust score found **all thirty**. That is masking, and it starts as soon as
+contamination is more than about one per cent.
+
+**So the scale is computed two ways and you choose.** `robust=True` is the
+median and the median absolute deviation scaled by 1.4826, which the extremes
+cannot move. Right for detection, wrong for description — a robust scale
+deliberately ignores the tail you may be trying to measure. Both are reported
+and neither is assumed.
+
+**Clipping always lowers the measured volatility; what it does to the Sharpe
+depends on which side the tail was on.** Symmetric extremes leave the mean
+alone and the ratio rises, which is the case people have in mind. A one-sided
+tail takes the profit with it and the ratio falls — 0.88x on the run below.
+Both are distortions of the same size, so `clip_effect` reports the shift
+without asserting a sign and hands back no data.
+
+**Concentration is the question behind all of it.** Three observations out of
+a thousand make half the total here. That strategy is a bet on three days, and
+whether those three were real is the only question that matters.
+
+```console
+$ mdnorm extremes pnl.csv --sigma 5 --robust --tail 10 \
+    --concentration 0.5 --clip 3
+observations         1000
+ordinary centre +0.00034184  scale 0.01422197
+robust   centre +0.00024111  scale 0.01004799
+note: the ordinary scale is 1.42x the robust one, which means the extremes
+are inflating the ruler they would be measured against.
+at 5 sigma
+  ordinary score     0
+  robust score       30
+largest 10 by size
+  their total        0.12
+  whole total        0.3418381129
+  without them       0.2218381129
+  share of the total 35.10%
+concentration        3 observation(s) make 50% of the total
+clipping at 3 sigma
+  would touch        32
+  volatility         0.01422197 -> 0.01100780
+  understated to     0.7740x
+  Sharpe             0.8838x (lower)
+note: the clip lowered the Sharpe rather than raising it, which means the
+tail was one-sided and the profit went with it.
+```
+
+Nothing was clipped. `winsorise` exists and is separate, so trimming a sample
+is a visible act rather than a side effect of measuring it — and the sigma you
+picked is a parameter chosen after seeing the data, which is what
+`mdnorm.provenance` is for.
+
 ### A result you cannot reproduce is not a result
 
 Every other module here refuses to guess a constant. `metrics` will not invent
@@ -1619,6 +1689,7 @@ $ mdnorm staleness marks.csv --min-run 3
 $ mdnorm halts trades.csv --halts halts.csv --decisions fills.csv
 $ mdnorm coverage feed.csv --min-gap 5m --calendar us_2026.csv
 $ mdnorm provenance run.json --verify --parameter trials=500
+$ mdnorm extremes pnl.csv --sigma 5 --robust --tail 10
 ```
 
 Also available as `python -m mdnorm`.

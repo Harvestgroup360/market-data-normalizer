@@ -71,6 +71,19 @@ from .coverage import (
     find_gaps,
     panel_coverage,
 )
+from .extremes import (
+    ClipEffect,
+    Extreme,
+    Spread,
+    TailReport,
+    clip_effect,
+    concentration,
+    flag_extremes,
+    spread,
+    tail_contribution,
+    winsorise,
+    zscores,
+)
 from .halts import (
     Decision,
     Halt,
@@ -321,7 +334,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.35.0"
+__version__ = "1.36.0"
 
 __all__ = [
     "MarketEvent",
@@ -394,6 +407,17 @@ __all__ = [
     "effective_sample_size_series",
     "deflate_t_stat",
     "read_spans_csv",
+    "Spread",
+    "Extreme",
+    "TailReport",
+    "ClipEffect",
+    "spread",
+    "zscores",
+    "flag_extremes",
+    "tail_contribution",
+    "concentration",
+    "clip_effect",
+    "winsorise",
     "Gap",
     "CoverageReport",
     "PanelCoverage",

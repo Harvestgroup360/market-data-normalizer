@@ -3,6 +3,63 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.36.0] - 2026-09-10
+
+### Added
+- `extremes`: which observations a sample rests on, and what removing them
+  would cost. A fat tail and a fat finger look identical in a price series —
+  one is the risk you are paid to carry and the other is a typo — so nothing
+  here removes anything.
+- **The masking result, which is the reason the module exists.** A z-score
+  divides by a standard deviation computed from the same sample, and every
+  extreme inflates it. Thirty six-sigma points in a thousand raised the scale
+  by 1.42x and pushed all thirty below four and a half sigma: at a five-sigma
+  cut the ordinary score finds **none** of them and the robust score finds
+  **all thirty**. There is a test asserting exactly that, both counts.
+- `spread(values, robust=)` computes the centre and scale two ways — mean and
+  standard deviation, or median and median absolute deviation scaled by
+  1.4826 so a sigma means the same thing in both. `flag_extremes` and the CLI
+  report both scales side by side and note when the ratio is above 1.1,
+  because that ratio is itself the contamination signal.
+- `clip_effect` measures what winsorising would do and returns no data.
+  Trimming a sample is a decision with consequences for every statistic
+  downstream, and a function that handed back the trimmed series would make
+  it the path of least resistance. `winsorise` exists separately so using it
+  is a visible act.
+- `concentration(values, share=)` answers the question behind all of it: how
+  few of the largest gains make half the total. Three observations out of a
+  thousand on the worked example. It returns `None` when the total is not
+  positive rather than inventing a share of a negative number.
+- `tail_contribution` ranks by absolute size rather than by profit, because
+  the question is which observations dominate; the signed sum is reported, so
+  a tail of large losses shows as a negative contribution.
+- No default sigma, for the same reason `coverage` has no default gap and
+  `halts` infers no pause. A threshold is chosen after seeing the data, which
+  makes it an in-sample decision applied to the whole history — and a
+  parameter, which means it belongs in a manifest beside the trial count.
+- `zscores` raises on a series with no spread rather than returning zeros: a
+  constant series has no scale, and every score in it would be a division by
+  nothing dressed up as a finding.
+- `mdnorm extremes pnl.csv --sigma 5 --robust --tail 10 --concentration 0.5
+  --clip 3`.
+- 42 tests, including the two-sided clip result below.
+
+### Changed
+- The module first shipped internally claiming that clipping raises the
+  Sharpe ratio. Building the README example produced a counterexample: on a
+  one-sided tail the clip takes the profit with the risk and the ratio falls
+  to 0.88x. Clipping always lowers the measured volatility; the effect on the
+  Sharpe depends on which side the tail was on, and both directions are
+  distortions of the same size. The property was renamed from
+  `sharpe_inflation` to `sharpe_shift`, the docstring no longer asserts a
+  sign, the CLI prints the direction it actually found, and there are now
+  tests for both cases. The claim was wrong before it was published rather
+  than after, which is the only reason it is in this section and not the
+  next one.
+- `sharpe_shift` is a ratio and is unstable when the unclipped Sharpe is near
+  zero. Rather than pick a threshold below which to hide it, both Sharpe
+  ratios are exposed and a test documents the case.
+
 ## [1.35.0] - 2026-09-09
 
 ### Added
