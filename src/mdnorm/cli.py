@@ -32,6 +32,7 @@ The common conversions, as a zero-dependency CLI::
     mdnorm coverage feed.csv --min-gap 5m --calendar us_2026.csv
     mdnorm provenance run.json --verify
     mdnorm extremes pnl.csv --sigma 5 --robust --tail 5
+    mdnorm windows pnl.csv --metric sharpe --trim-start 21 --count 24
 
 Input format is inferred from the extension: ``.jsonl`` / ``.ndjson`` files
 are read as NDJSON (already-normalized events), anything else as a trades
@@ -43,7 +44,7 @@ from __future__ import annotations
 import argparse
 import sys
 from decimal import Decimal, localcontext
-from typing import List, Optional, cast
+from typing import List, Optional, Sequence, cast
 
 from . import __version__
 from .adjust import AdjustMethod, adjust_events, read_actions_csv
@@ -68,6 +69,8 @@ from .provenance import (DriftKind, manifest, read_manifest, verify,
                          write_manifest)
 from .extremes import (clip_effect, concentration, flag_extremes, spread,
                        tail_contribution)
+from .windows import (WindowKind, expanding_windows, rolling_windows,
+                      sweep, trimmed_ends, trimmed_starts)
 from .independence import (deflate_t_stat, effective_sample_size,
                            effective_sample_size_series,
                            label_spans, read_spans_csv)
@@ -2226,6 +2229,130 @@ def _cmd_extremes(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_windows(args: argparse.Namespace) -> int:
+    from .metrics import (deflated_sharpe_ratio, hit_rate, max_drawdown,
+                          sharpe_ratio, trial_variance)
+
+    try:
+        rows = read_samples_csv(args.input, ts_column=args.ts_field,
+                                value_column=args.value_field)
+    except (KeyError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    values = [r.value for r in rows]
+    n = len(values)
+    if n < 2:
+        print("error: a sweep needs at least two observations", file=sys.stderr)
+        return 1
+
+    def _depth(v: Sequence[Decimal]) -> Optional[Decimal]:
+        """The depth of the worst decline, as a Decimal rather than a record."""
+        from .metrics import equity_curve
+
+        worst = max_drawdown(equity_curve(v))
+        return None if worst is None else worst.depth
+
+    metrics: dict = {
+        "sharpe": sharpe_ratio,
+        "total": lambda v: sum(v, Decimal(0)) if v else None,
+        "mean": lambda v: sum(v, Decimal(0)) / len(v) if v else None,
+        "hit-rate": hit_rate,
+        "max-drawdown": _depth,
+    }
+    metric = metrics[args.metric]
+
+    chosen = [k for k in ("trim_start", "trim_end", "rolling", "expanding")
+              if getattr(args, k) is not None]
+    if len(chosen) != 1:
+        print("error: give exactly one of --trim-start, --trim-end, "
+              "--rolling or --expanding", file=sys.stderr)
+        return 1
+    which = chosen[0]
+    if which == "trim_start":
+        windows = trimmed_starts(n, step=args.trim_start, count=args.count)
+        kind = WindowKind.TRIMMED_START
+    elif which == "trim_end":
+        windows = trimmed_ends(n, step=args.trim_end, count=args.count)
+        kind = WindowKind.TRIMMED_END
+    elif which == "rolling":
+        if args.length is None:
+            print("error: --rolling needs --length", file=sys.stderr)
+            return 1
+        windows = rolling_windows(n, length=args.length, step=args.rolling)
+        kind = WindowKind.ROLLING
+    else:
+        windows = expanding_windows(n, minimum=args.minimum or args.expanding,
+                                    step=args.expanding)
+        kind = WindowKind.EXPANDING
+
+    if not windows:
+        print("error: those settings produce no window that fits in "
+              f"{n} observations", file=sys.stderr)
+        return 1
+
+    rep = sweep(values, windows, metric, kind=kind)
+    print(f"observations         {n}", file=sys.stderr)
+    print(f"metric               {args.metric}", file=sys.stderr)
+    print(f"windows              {len(rep.samples)} ({kind.value})",
+          file=sys.stderr)
+    print(f"  shortest           {rep.shortest}", file=sys.stderr)
+    print(f"  longest            {rep.longest}", file=sys.stderr)
+    if rep.full is not None:
+        print(f"full sample          {rep.full:.4f}", file=sys.stderr)
+    lo, hi = rep.lowest, rep.highest
+    if lo is None or hi is None:
+        print("note: no window produced a value the metric could compute.",
+              file=sys.stderr)
+        return 0
+    assert rep.median is not None and rep.spread is not None
+    print(f"lowest               {lo:.4f}", file=sys.stderr)
+    print(f"median               {rep.median:.4f}", file=sys.stderr)
+    print(f"highest              {hi:.4f}", file=sys.stderr)
+    print(f"spread               {rep.spread:.4f}", file=sys.stderr)
+    share = rep.share_positive
+    assert share is not None
+    print(f"positive             {rep.positive}/{len(rep.values)} "
+          f"({share * 100:.1f}%)", file=sys.stderr)
+    if rep.changes_sign:
+        print("note: the metric is positive on some windows and negative on "
+              "others. That is not a matter of degree.", file=sys.stderr)
+
+    print(f"trials               {rep.trials}", file=sys.stderr)
+    print("note: every window was an alternative that could have been "
+          "reported. Quoting the best of them without deflating for that "
+          "count is the same error as quoting the best of that many "
+          "strategies.", file=sys.stderr)
+
+    if args.metric == "sharpe" and args.deflate:
+        vals = list(rep.values)
+        if len(vals) < 2:
+            print("note: --deflate needs at least two windows to estimate "
+                  "the variance across trials.", file=sys.stderr)
+            return 0
+        var = trial_variance(vals)
+        if var is None:
+            print("note: the windows produced no variance across trials, so "
+                  "there is nothing to deflate against.", file=sys.stderr)
+            return 0
+        naive = deflated_sharpe_ratio(hi, observations=n, trials=1,
+                                      variance=var)
+        honest = deflated_sharpe_ratio(hi, observations=n, trials=rep.trials,
+                                       variance=var)
+        print("best window deflated", file=sys.stderr)
+        print(f"  as one trial       {naive:.4f}", file=sys.stderr)
+        print(f"  as {rep.trials} trials      {honest:.4f}", file=sys.stderr)
+
+    if args.list_windows:
+        for smp in rep.samples[:args.list_limit]:
+            shown = "-" if smp.value is None else f"{smp.value:.4f}"
+            print(f"  [{smp.window.start}, {smp.window.end})  "
+                  f"n={smp.observations}  {shown}", file=sys.stderr)
+        if len(rep.samples) > args.list_limit:
+            print(f"  ... ({len(rep.samples) - args.list_limit} more)",
+                  file=sys.stderr)
+    return 0
+
+
 def _cmd_reconcile(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -3117,6 +3244,43 @@ def build_parser() -> argparse.ArgumentParser:
     p_ex.add_argument("--ts-field", default="ts_ns", metavar="NAME")
     p_ex.add_argument("--value-field", default="value", metavar="NAME")
     p_ex.set_defaults(func=_cmd_extremes)
+
+
+    p_wi = sub.add_parser("windows",
+                          help="run a metric over many sample windows and "
+                               "report the spread, and the trial count that "
+                               "choosing one of them implies")
+    p_wi.add_argument("input", help="CSV of ts_ns,value")
+    p_wi.add_argument("--metric", required=True,
+                      choices=["sharpe", "total", "mean", "hit-rate",
+                               "max-drawdown"],
+                      help="what to compute on each window")
+    p_wi.add_argument("--trim-start", type=int, default=None, metavar="N",
+                      help="drop this many more observations from the front "
+                           "each time")
+    p_wi.add_argument("--trim-end", type=int, default=None, metavar="N",
+                      help="stop this many more observations earlier each time")
+    p_wi.add_argument("--rolling", type=int, default=None, metavar="N",
+                      help="advance a fixed-length window by this much; needs "
+                           "--length")
+    p_wi.add_argument("--expanding", type=int, default=None, metavar="N",
+                      help="grow a window from the start by this much")
+    p_wi.add_argument("--length", type=int, default=None, metavar="N",
+                      help="window length for --rolling")
+    p_wi.add_argument("--minimum", type=int, default=None, metavar="N",
+                      help="first window length for --expanding")
+    p_wi.add_argument("--count", type=int, default=None, metavar="N",
+                      help="how many windows to produce at most")
+    p_wi.add_argument("--deflate", action="store_true",
+                      help="with --metric sharpe, deflate the best window "
+                           "against one trial and against the real count")
+    p_wi.add_argument("--list-windows", action="store_true",
+                      help="list each window and its value")
+    p_wi.add_argument("--list-limit", type=int, default=20, metavar="N",
+                      help="how many to list (default: 20)")
+    p_wi.add_argument("--ts-field", default="ts_ns", metavar="NAME")
+    p_wi.add_argument("--value-field", default="value", metavar="NAME")
+    p_wi.set_defaults(func=_cmd_windows)
 
 
     p_rc = sub.add_parser("reconcile",

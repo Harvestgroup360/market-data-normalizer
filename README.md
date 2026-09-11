@@ -602,6 +602,76 @@ for `AsOfSeries.delayed`: by_ns=412000 for the typical case, 3900000 for the
 case worth sizing against.
 ```
 
+### Choosing where the sample starts is a trial
+
+A backtest is reported as one number over one window. The window was chosen
+too — by when the data happened to begin, by which vendor file was to hand, or
+by somebody sliding the start forward until the curve looked right. The last
+of those is a search, and nobody counts it:
+
+```python
+from mdnorm import trimmed_starts, sweep, sharpe_ratio
+
+rep = sweep(returns, trimmed_starts(len(returns), step=21, count=24),
+            sharpe_ratio, kind=WindowKind.TRIMMED_START)
+rep.full          # -0.0329 — a losing strategy over everything
+rep.highest       # +0.0524 — profitable, starting eleven months in
+rep.changes_sign  # True
+rep.trials        # 25 — the number to hand a deflated Sharpe
+```
+
+**A window count is a trial count.** Twenty-four start dates are
+twenty-four alternatives that could have been reported. Quoting the best of
+them without deflating for that count is the same error as quoting the best of
+twenty-four strategies, and it is harder to see because only one strategy was
+ever written down. `SensitivityReport.trials` exists so the number reaches
+`deflated_sharpe_ratio` instead of somebody's memory of how the window was
+picked.
+
+**The spread is the finding, not the best value in it.** A metric that is
+positive on seven windows out of twenty-four and negative on the other
+seventeen has not been measured badly — it has been measured, and the answer
+is that the headline figure is mostly a function of where the window opens.
+
+**Shorter windows are noisier, and that is part of what you see.** A metric
+over a third of the data carries roughly √3 times the standard error, so some
+of the spread is sampling noise rather than instability. Nothing here
+separates the two; that would need a model of the return process and this
+library does not have one. Every window carries its observation count so the
+shrinkage is visible, and a wide spread is consistent with instability rather
+than proof of it.
+
+```console
+$ mdnorm windows pnl.csv --metric sharpe --trim-start 21 --count 24 --deflate
+observations         1000
+windows              24 (trimmed_start)
+  shortest           496
+  longest            979
+full sample          -0.0329
+lowest               -0.0351
+median               -0.0168
+highest              0.0524
+spread               0.0875
+positive             7/24 (29.2%)
+note: the metric is positive on some windows and negative on others. That is
+not a matter of degree.
+trials               25
+best window deflated
+  as one trial       0.9510
+  as 25 trials       0.4730
+```
+
+Read the last two lines together. The best window deflates to 0.95 if you
+pretend it was the only thing you ever looked at, and to 0.47 once the
+twenty-five windows are counted — and the strategy loses money over the full
+sample either way.
+
+**The sensitivity is usually to a handful of observations.** If dropping the
+first four months changes the answer, find out what was in those four months
+before concluding anything about regimes. `mdnorm.extremes` counts how few
+observations a result rests on, and a moved start date is often just a dropped
+outlier wearing a different hat.
+
 ### A fat tail and a fat finger look identical
 
 One is the risk you are paid to carry, the other is a typo, and nothing in the
@@ -1690,6 +1760,7 @@ $ mdnorm halts trades.csv --halts halts.csv --decisions fills.csv
 $ mdnorm coverage feed.csv --min-gap 5m --calendar us_2026.csv
 $ mdnorm provenance run.json --verify --parameter trials=500
 $ mdnorm extremes pnl.csv --sigma 5 --robust --tail 10
+$ mdnorm windows pnl.csv --metric sharpe --trim-start 21 --deflate
 ```
 
 Also available as `python -m mdnorm`.

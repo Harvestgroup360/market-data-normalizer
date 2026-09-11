@@ -3,6 +3,57 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.37.0] - 2026-09-11
+
+### Added
+- `windows`: run a metric across many sample windows and report the spread —
+  and the trial count that choosing one of them implies. A backtest is
+  reported as one number over one window, and the window was chosen too.
+- **A window count is a trial count, and this is the point of the module.**
+  `SensitivityReport.trials` is the number to hand `deflated_sharpe_ratio`.
+  Quoting the best of twenty-four start dates without deflating for
+  twenty-four trials is the same error as quoting the best of twenty-four
+  strategies, and it is harder to see because only one strategy was ever
+  written down. On the README example the best window deflates to 0.9510 as
+  a single trial and to 0.4730 once the twenty-five are counted — while the
+  strategy loses money over the full sample either way.
+- `trimmed_starts` and `trimmed_ends` answer the question a reader of a
+  backtest actually has: how much of this depends on the data happening to
+  begin, or end, when it did. `rolling_windows` and `expanding_windows` cover
+  the walk-forward shapes.
+- `changes_sign` is the sharpest form of the finding — positive on some
+  windows and negative on others is not a matter of degree. The README case
+  is positive on 7 of 24.
+- **The noise caveat is stated rather than hidden.** A metric over a third of
+  the data carries roughly the square root of three times the standard error,
+  so part of any spread is sampling noise rather than instability. Separating
+  them would need a model of the return process, which this library does not
+  have. Every window carries its observation count, and the documentation
+  says a wide spread is consistent with instability rather than proof of it.
+- A window the metric cannot answer for records `None` rather than raising: a
+  window too short for a Sharpe is a fact about the window. Those are left out
+  of every summary rather than counted as zero, which would drag the figures
+  toward a value the metric never produced, and they are not counted as
+  trials either.
+- A window reaching past the end of the series raises instead of being
+  silently shortened. A window that does not describe the data it was built
+  for is a bug in the caller's arithmetic, and quietly repairing it would hide
+  the one thing worth knowing.
+- No default length and no default step, as everywhere else here.
+- `mdnorm windows pnl.csv --metric sharpe --trim-start 21 --count 24
+  --deflate`, with `--rolling`, `--expanding`, `--trim-end` and five metrics.
+- 31 tests, including one that the trial count actually feeds a deflated
+  Sharpe and lowers it.
+
+### Fixed
+- Two name collisions caught before release by the package-level export test
+  added in 1.35.0, which is the second time it has earned its place. The
+  sweep was originally called `evaluate`, which `execution` has exported
+  since 1.8.0, and its per-window record was `Sample`, which `seasonality`
+  has exported since 1.28.0. Both would have silently shadowed the older
+  names on import. They are now `sweep` and `WindowResult`; `mdnorm.evaluate`
+  and `mdnorm.Sample` still resolve to the modules they always did.
+
 ## [1.36.0] - 2026-09-10
 
 ### Added

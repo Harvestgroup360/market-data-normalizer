@@ -315,6 +315,17 @@ from .provenance import (
     verify,
     write_manifest,
 )
+from .windows import (
+    SensitivityReport,
+    Window,
+    WindowKind,
+    WindowResult,
+    expanding_windows,
+    rolling_windows,
+    sweep,
+    trimmed_ends,
+    trimmed_starts,
+)
 from .quality import QualityIssue, clean, find_issues
 from .records import bar_to_dict, event_to_dict, to_records
 from .schema import EventType, MarketEvent, Side
@@ -334,7 +345,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.36.0"
+__version__ = "1.37.0"
 
 __all__ = [
     "MarketEvent",
@@ -614,6 +625,15 @@ __all__ = [
     "write_jsonl",
     "event_from_dict",
     "Pipeline",
+    "WindowKind",
+    "Window",
+    "WindowResult",
+    "SensitivityReport",
+    "rolling_windows",
+    "expanding_windows",
+    "trimmed_starts",
+    "trimmed_ends",
+    "sweep",
     "Digest",
     "InputRef",
     "Manifest",
