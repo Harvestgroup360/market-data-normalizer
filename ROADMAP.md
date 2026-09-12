@@ -11,9 +11,9 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Forty-nine tagged releases, thirty-six of them published to PyPI (the
+Fifty tagged releases, thirty-seven of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 1473 tests, and a type checker that passes clean.
+dependencies, Python 3.10+, 1509 tests, and a type checker that passes clean.
 
 | Layer | Modules |
 | --- | --- |
@@ -24,12 +24,13 @@ dependencies, Python 3.10+, 1473 tests, and a type checker that passes clean.
 | Microstructure | `book`, `consolidate`, `micro` |
 | Execution | `execution` |
 | Research | `align`, `arrival`, `features`, `labels`, `revisions`, `mixfreq`, `seasonality` |
-| Evaluation | `metrics`, `costs`, `independence`, `extremes`, `windows` |
+| Evaluation | `metrics`, `costs`, `independence`, `extremes`, `windows`, `multiverse` |
 | Reproducibility | `provenance` |
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
 Shipped since the last revision of this file: `mixfreq`, `membership`,
-`reconcile`, `calendars`, `fx`, `ticksize`, `arrival`, `seasonality`, `resolution`, `auctions`, `independence`, `staleness`, `halts`, `coverage`, `provenance`, `extremes` and `windows`. The first two were the items that stood under
+`reconcile`, `calendars`, `fx`, `ticksize`, `arrival`, `seasonality`, `resolution`, `auctions`, `independence`, `staleness`, `halts`, `coverage`, `provenance`, `extremes`, `windows` and
+`multiverse`. The first two were the items that stood under
 *Under consideration* below; the other four were not on the list. `reconcile` is
 here because comparing two sources of the same series is the check people run
 before trusting either, and nothing in the library did it. A slow series now carries the
@@ -52,6 +53,20 @@ computable number — the sessions in a year, and the minutes in them, come out
 of the calendar rather than out of 252. A calendar refuses to answer for a
 date its source file never covered, which is the same rule the rest of the
 library follows: report the gap, do not fill it.
+
+`multiverse` is the newest and the one that finishes an argument the last two
+releases started. `windows` counts the alternatives in *where the sample
+begins*; `provenance` records the arguments a run was given; `multiverse`
+crosses the arguments themselves. Three cleaning decisions on one unchanged
+series produce twelve pipelines and an annualised Sharpe ratio between 0.4254
+and 0.8682, and the attribution says the clipping threshold owns 0.3096 of
+that 0.4428 — which is a more useful sentence than *the number is unstable*.
+It ships with a caveat we considered leaving out and did not: cells of a
+shared grid are not independent, so the specification count is an upper bound
+on the effective number of trials rather than the number itself. Deflating by
+it is conservative and still wrong, and estimating the effective count would
+need a model of how the decisions correlate. We do not have one, so we say so
+instead of shipping a number that looks like we do.
 
 Not a module, but the change in 1.24.0 belongs in this list: the trailing sum
 under `rolling_mean` is now slid instead of recomputed, which took it from

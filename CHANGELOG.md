@@ -3,6 +3,59 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.38.0] - 2026-09-12
+
+### Added
+- `multiverse`: run a metric under every combination of the cleaning
+  decisions a pipeline contains, and report the spread. A result arrives as
+  one number produced by one pipeline, and that pipeline holds a dozen
+  decisions that were made once and never revisited. Together they define a
+  grid, and the published figure is one cell of it.
+- **The grid multiplies, which is the point.** Six binary decisions are
+  sixty-four defensible pipelines. On the README example three decisions —
+  clip at none, five or three sigma; ordinary or robust scale; keep or drop
+  repeated values — produce twelve pipelines and an annualised Sharpe ratio
+  between 0.4254 and 0.8682 on one unchanged series.
+- `choice_effect` and `dominant_choice` answer the question a reader of a
+  wide spread actually has: *which decision is this sensitive to*. On the
+  same example the clipping threshold accounts for 0.3096 of the 0.4428
+  spread, and the useful sentence is not "the number is unstable" but "the
+  number is mostly a function of the clipping threshold".
+- **The trial count ships with its caveat rather than without it.**
+  `SpecCurve.trials` can be handed to `deflated_sharpe_ratio` the way
+  `SensitivityReport.trials` can, and the docstring says plainly that it is
+  an upper bound: cells of a shared grid differ in one choice and see nearly
+  the same data, so the raw count overstates how much searching happened.
+  Deflating by it errs toward caution, which is the direction to be wrong in,
+  and it is still wrong. Nothing here estimates the effective count, because
+  that needs a model of how the choices correlate and this library does not
+  have one.
+- `SpecCurve.best` names the specification that produced the highest value.
+  It is named for the number and not for the pipeline: the cell that flatters
+  a result is the one most in need of a reason.
+- `changes_sign` carries over from `windows` — profitable after one
+  defensible cleaning and loss-making after another is not a matter of
+  degree.
+- A specification the caller's pipeline raises on is recorded as `None` and
+  the sweep continues; losing the other sixty-three results to one bad cell
+  would be a poor trade. A `RuntimeError` still propagates, because a bug in
+  the caller's code is not a fact about the grid.
+- `mdnorm multiverse` builds a grid from `--clip`, `--scale` and `--stale`,
+  reports the spread with the attribution per decision, and with `--deflate`
+  deflates the best cell against one trial and against the grid size.
+- `mdnorm multiverse --deflate` undoes any `--periods` annualisation before
+  deflating, because the deflation is defined on per-period Sharpe ratios.
+  Our first cut did not, and it reported every result as indistinguishable
+  from certain — 1.0000 against one trial and against twelve alike. It is
+  recorded here because a figure scaled by the square root of the calendar is
+  exactly the kind of flattering, unalarming wrong answer this library exists
+  to catch, and we produced one. `mdnorm windows --deflate` was never
+  affected: it reports the per-period Sharpe and takes no calendar.
+
+### Notes
+- 36 new tests. The suite is 1509. `mypy` passes clean.
+- No runtime dependencies. Python 3.10+.
+
 ## [1.37.0] - 2026-09-11
 
 ### Added

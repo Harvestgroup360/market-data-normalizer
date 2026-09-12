@@ -2353,6 +2353,153 @@ def _cmd_windows(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_multiverse(args: argparse.Namespace) -> int:
+    """Run one metric under every combination of the cleaning decisions."""
+    from .metrics import (annualise_sharpe, deflated_sharpe_ratio,
+                          sharpe_ratio, trial_variance)
+    from .extremes import winsorise
+    from .multiverse import (Choice, choice_effect, dominant_choice, explore,
+                             specifications)
+
+    try:
+        rows = read_samples_csv(args.input, ts_column=args.ts_field,
+                                value_column=args.value_field)
+    except (KeyError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    base = [r.value for r in rows]
+    if len(base) < 2:
+        print("error: a multiverse needs at least two observations",
+              file=sys.stderr)
+        return 1
+
+    choices = []
+    if args.clip:
+        opts: list = [("none", None)]
+        for sig in args.clip:
+            opts.append((f"{sig} sigma", Decimal(sig)))
+        choices.append(Choice("clip", opts))
+    if args.scale:
+        choices.append(Choice("scale", [("ordinary", False),
+                                        ("robust", True)]))
+    if args.stale:
+        choices.append(Choice("stale", [("keep", False), ("drop", True)]))
+    if not choices:
+        print("error: give at least one of --clip, --scale or --stale; the "
+              "grid is the thing this command reports on", file=sys.stderr)
+        return 1
+
+    def _drop_repeats(vals: Sequence[Decimal]) -> List[Decimal]:
+        out = [vals[0]]
+        for prev, cur in zip(vals, vals[1:]):
+            if cur != prev:
+                out.append(cur)
+        return out
+
+    def run(spec) -> Optional[Decimal]:
+        vals = list(base)
+        if spec.values.get("stale"):
+            vals = _drop_repeats(vals)
+        sigma = spec.values.get("clip")
+        if sigma is not None:
+            vals = winsorise(vals, sigma=sigma,
+                             robust=bool(spec.values.get("scale")))
+        raw = sharpe_ratio(vals)
+        if raw is None:
+            return None
+        return (annualise_sharpe(raw, Decimal(args.periods))
+                if args.periods else raw)
+
+    specs = specifications(choices)
+    curve = explore(specs, run)
+
+    print(f"observations         {len(base)}", file=sys.stderr)
+    print(f"specifications       {len(specs)}", file=sys.stderr)
+    for ch in choices:
+        print(f"  {ch.name:18} {' | '.join(ch.labels)}", file=sys.stderr)
+    if curve.unanswered:
+        print(f"unanswered           {curve.unanswered}", file=sys.stderr)
+
+    lo, hi = curve.lowest, curve.highest
+    if lo is None or hi is None:
+        print("note: no specification produced a value.", file=sys.stderr)
+        return 0
+    assert curve.median is not None and curve.spread is not None
+    print(f"lowest               {lo:.4f}", file=sys.stderr)
+    print(f"median               {curve.median:.4f}", file=sys.stderr)
+    print(f"highest              {hi:.4f}", file=sys.stderr)
+    print(f"spread               {curve.spread:.4f}", file=sys.stderr)
+    share = curve.share_positive
+    assert share is not None
+    print(f"positive             {curve.positive}/{curve.answered} "
+          f"({share * 100:.1f}%)", file=sys.stderr)
+    if curve.changes_sign:
+        print("note: the metric is positive under some cleanings and negative "
+              "under others. That is not a matter of degree.", file=sys.stderr)
+
+    best, worst = curve.best, curve.worst
+    assert best is not None and worst is not None
+    print(f"highest from         {best.specification}", file=sys.stderr)
+    print(f"lowest from          {worst.specification}", file=sys.stderr)
+
+    print("attribution", file=sys.stderr)
+    for name in curve.names:
+        eff = choice_effect(curve, name)
+        shown = "  ".join(f"{lbl}={'-' if med is None else f'{med:.4f}'}"
+                          for lbl, med in eff.medians)
+        tail = "" if eff.spread is None else f"   spread {eff.spread:.4f}"
+        print(f"  {name:18} {shown}{tail}", file=sys.stderr)
+    dom = dominant_choice(curve)
+    if dom is None:
+        print("note: no single decision accounts for the spread, so the "
+              "choices interact.", file=sys.stderr)
+    else:
+        assert dom.spread is not None
+        print(f"dominant decision    {dom.name} ({dom.spread:.4f} of "
+              f"{curve.spread:.4f})", file=sys.stderr)
+
+    print(f"trials               {curve.trials}", file=sys.stderr)
+    print("note: these specifications share a grid and are not independent, "
+          "so this is an upper bound on the effective number of trials. "
+          "Deflating by it errs toward caution rather than toward being "
+          "right.", file=sys.stderr)
+
+    if args.deflate:
+        # The deflation is defined on per-period Sharpe ratios, so undo any
+        # annualisation before it rather than feeding it a figure scaled by
+        # the square root of the calendar.
+        factor = (Decimal(args.periods).sqrt() if args.periods
+                  else Decimal(1))
+        vals = [v / factor for v in curve.values]
+        if len(vals) < 2:
+            print("note: --deflate needs at least two answered "
+                  "specifications.", file=sys.stderr)
+            return 0
+        var = trial_variance(vals)
+        if var is None:
+            print("note: the grid produced no variance across trials, so "
+                  "there is nothing to deflate against.", file=sys.stderr)
+            return 0
+        top = hi / factor
+        naive = deflated_sharpe_ratio(top, observations=len(base), trials=1,
+                                      variance=var)
+        honest = deflated_sharpe_ratio(top, observations=len(base),
+                                       trials=curve.trials, variance=var)
+        print("best specification deflated", file=sys.stderr)
+        print(f"  {'as one trial':18} {naive:.4f}", file=sys.stderr)
+        print(f"  {f'as {curve.trials} trials':18} {honest:.4f}",
+              file=sys.stderr)
+
+    if args.list_specs:
+        for res in curve.results[:args.list_limit]:
+            shown = "-" if res.value is None else f"{res.value:.4f}"
+            print(f"  {res.specification}  {shown}", file=sys.stderr)
+        if len(curve.results) > args.list_limit:
+            print(f"  ... ({len(curve.results) - args.list_limit} more)",
+                  file=sys.stderr)
+    return 0
+
+
 def _cmd_reconcile(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -3281,6 +3428,33 @@ def build_parser() -> argparse.ArgumentParser:
     p_wi.add_argument("--ts-field", default="ts_ns", metavar="NAME")
     p_wi.add_argument("--value-field", default="value", metavar="NAME")
     p_wi.set_defaults(func=_cmd_windows)
+
+    p_mv = sub.add_parser("multiverse",
+                          help="run a metric under every combination of the "
+                               "cleaning decisions and report which decision "
+                               "moves it")
+    p_mv.add_argument("input", help="CSV of ts_ns,value")
+    p_mv.add_argument("--clip", type=str, nargs="+", default=None,
+                      metavar="SIGMA",
+                      help="add a clipping decision with these thresholds "
+                           "plus 'no clipping'")
+    p_mv.add_argument("--scale", action="store_true",
+                      help="add the ordinary-versus-robust scale decision")
+    p_mv.add_argument("--stale", action="store_true",
+                      help="add the keep-versus-drop repeated-value decision")
+    p_mv.add_argument("--periods", type=int, default=None, metavar="N",
+                      help="annualise the Sharpe at this many periods a year; "
+                           "left out, the per-period figure is reported")
+    p_mv.add_argument("--deflate", action="store_true",
+                      help="deflate the best specification against one trial "
+                           "and against the grid size")
+    p_mv.add_argument("--list-specs", action="store_true",
+                      help="list each specification and its value")
+    p_mv.add_argument("--list-limit", type=int, default=20, metavar="N",
+                      help="how many to list (default: 20)")
+    p_mv.add_argument("--ts-field", default="ts_ns", metavar="NAME")
+    p_mv.add_argument("--value-field", default="value", metavar="NAME")
+    p_mv.set_defaults(func=_cmd_multiverse)
 
 
     p_rc = sub.add_parser("reconcile",

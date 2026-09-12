@@ -315,6 +315,17 @@ from .provenance import (
     verify,
     write_manifest,
 )
+from .multiverse import (
+    Choice,
+    ChoiceEffect,
+    SpecCurve,
+    SpecResult,
+    Specification,
+    choice_effect,
+    dominant_choice,
+    explore,
+    specifications,
+)
 from .windows import (
     SensitivityReport,
     Window,
@@ -345,7 +356,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.37.0"
+__version__ = "1.38.0"
 
 __all__ = [
     "MarketEvent",
@@ -634,6 +645,15 @@ __all__ = [
     "trimmed_starts",
     "trimmed_ends",
     "sweep",
+    "Choice",
+    "Specification",
+    "SpecResult",
+    "SpecCurve",
+    "ChoiceEffect",
+    "specifications",
+    "explore",
+    "choice_effect",
+    "dominant_choice",
     "Digest",
     "InputRef",
     "Manifest",

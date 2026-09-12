@@ -602,6 +602,83 @@ for `AsOfSeries.delayed`: by_ns=412000 for the typical case, 3900000 for the
 case worth sizing against.
 ```
 
+### Every cleaning decision is a fork, and nobody counts the forks
+
+The window is not the only thing that was chosen. So was the staleness
+threshold, the clipping sigma, whether the scale was ordinary or robust,
+whether repeated prints were dropped. Each decision was defensible and made
+once. Together they define a grid, and the published number is one cell of it:
+
+```python
+from mdnorm import Choice, specifications, explore, choice_effect
+
+choices = [
+    Choice("clip",  [("none", None), ("5 sigma", D(5)), ("3 sigma", D(3))]),
+    Choice("scale", [("ordinary", False), ("robust", True)]),
+    Choice("stale", [("keep", False), ("drop", True)]),
+]
+curve = explore(specifications(choices), run_pipeline)
+curve.highest        # 0.8682 — clip nothing, ordinary scale, keep repeats
+curve.lowest         # 0.4254 — clip at 3 sigma, robust scale, drop repeats
+curve.trials         # 12
+choice_effect(curve, "clip").spread    # 0.3096 of the 0.4428 total
+```
+
+**The grid multiplies, which is the point.** Three decisions here; six binary
+ones would be sixty-four pipelines. Nothing samples the grid for you and there
+is no default set of decisions, because which forks a pipeline contains is a
+property of that pipeline and a library that guessed would be reporting on one
+it invented.
+
+**Which decision is doing the work is usually answerable, and that is the
+useful output.** `choice_effect` gives the median result under each option of
+one decision; `dominant_choice` names the one that pulls them furthest apart.
+Above, the clipping threshold accounts for 0.3096 of the 0.4428 spread — so
+the sentence to write is not *the number is unstable* but *the number is
+mostly a function of a threshold we chose in a meeting*.
+
+**A specification count is a trial count, with a caveat we will not bury.**
+`SpecCurve.trials` goes to `deflated_sharpe_ratio` the way
+`SensitivityReport.trials` does, and it is an **upper bound** on the effective
+number of trials: two pipelines differing in one choice out of six see nearly
+the same data. Deflating by the raw count errs toward caution, which is the
+direction to be wrong in, and it is still wrong. Nothing here estimates the
+effective count, because that needs a model of how the choices correlate and
+this library does not have one.
+
+```console
+$ mdnorm multiverse pnl.csv --clip 5 3 --scale --stale --periods 252 --deflate
+observations         1000
+specifications       12
+  clip               none | 5 sigma | 3 sigma
+  scale              ordinary | robust
+  stale              keep | drop
+lowest               0.4254
+median               0.7851
+highest              0.8682
+spread               0.4428
+positive             12/12 (100.0%)
+highest from         clip=none, scale=ordinary, stale=keep
+lowest from          clip=3 sigma, scale=robust, stale=drop
+attribution
+  clip               none=0.8266  5 sigma=0.7929  3 sigma=0.5170   spread 0.3096
+  scale              ordinary=0.7851  robust=0.7485   spread 0.0366
+  stale              keep=0.8345  drop=0.7485   spread 0.0860
+dominant decision    clip (0.3096 of 0.4428)
+trials               12
+note: these specifications share a grid and are not independent, so this is
+an upper bound on the effective number of trials. Deflating by it errs toward
+caution rather than toward being right.
+best specification deflated
+  as one trial       0.9579
+  as 12 trials       0.8874
+```
+
+`best` is named for the number and not for the pipeline. Which cleaning is
+correct is not a question this library can answer — the cell that flatters a
+result is simply the one most in need of a reason, and the parameters that
+produced it belong in a `mdnorm.provenance` manifest.
+
 ### Choosing where the sample starts is a trial
 
 A backtest is reported as one number over one window. The window was chosen
