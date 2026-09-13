@@ -602,6 +602,80 @@ for `AsOfSeries.delayed`: by_ns=412000 for the typical case, 3900000 for the
 case worth sizing against.
 ```
 
+### Five hundred names is not five hundred bets
+
+`mdnorm.independence` counts how many independent observations an
+overlapping-label study really has, along the time axis. This asks the same
+question across the cross-section, and almost nobody asks it:
+
+```python
+from mdnorm import correlation_matrix, breadth_report
+
+rep = breadth_report(correlation_matrix(returns_by_symbol))
+rep.names                  # 40
+rep.average_correlation    # 0.5035
+rep.effective_bets         # 3.628
+rep.overstatement          # 11.02x
+rep.ratio_overstatement    # 3.32x
+```
+
+**Breadth enters performance arithmetic under a square root, so the error
+compounds twice.** The fundamental law puts an information ratio at the
+information coefficient times the root of the number of independent bets.
+Forty names driven by one market are not forty bets and not twenty — they are
+three and a half, and a ratio computed on the position count is overstated by
+a factor of three.
+
+**The error is silent because the position count is a fact.** There really are
+forty names, the trades really happened, the reconciliation really balances.
+Nothing in the accounting is wrong. What is wrong is the claim implied by
+quoting a statistic against forty, and no line of the books contradicts it.
+
+**Two counts are reported and they are not two estimates of one thing.**
+`effective_bets` is the participation ratio of the eigenvalues, `(Σλ)²/Σλ²` —
+how concentrated risk is across independent directions. `effective_observations`
+is `n / (1 + (n-1)ρ̄)` — what an average of n correlated series is worth as a
+sample size, which is the number a cross-sectional t-statistic needs, and
+`BreadthReport.as_sample()` hands it straight to `deflate_t_stat`. They
+coincide only at the extremes: both give n for the identity and one when every
+correlation is one. Three names at ρ = 0.5 are **two bets and one and a half
+observations**, and as n grows at fixed ρ the first tends to 1/ρ² and the
+second to 1/ρ. Quote the one that matches the claim being made.
+
+```console
+$ mdnorm breadth panel.csv --eigenvalues --list-limit 5
+names                  40
+observations           500
+average correlation    0.5035
+effective bets         3.628
+effective observations 1.938
+position count over    11.02x the bets
+  information ratio    3.32x overstated
+eigenvalues
+    1     20.747915   51.87%
+    2      0.812768    2.03%
+    3      0.777735    1.94%
+    4      0.750583    1.88%
+    5      0.748383    1.87%
+  ... (35 more)
+```
+
+One direction carries fifty-two per cent of the variance and the next
+thirty-nine share the rest. That is the whole finding, and it is visible
+before any of the summary numbers are computed.
+
+**A short sample flatters the count upward.** With fewer observations than
+names the sample correlation matrix is singular and part of its spectrum is
+noise, which inflates the apparent number of bets. `thin_sample` reports the
+condition; nothing here corrects for it, because the correction needs a model
+of the return process and this library does not have one.
+
+The eigenvalues come from a cyclic Jacobi rotation written for `Decimal`, so
+there is still no runtime dependency. It stops when the off-diagonal mass
+reaches the round-off floor of the working precision and raises if the floor
+it reaches is large enough to matter, rather than returning a
+half-diagonalised answer dressed up as a spectrum.
+
 ### Every cleaning decision is a fork, and nobody counts the forks
 
 The window is not the only thing that was chosen. So was the staleness

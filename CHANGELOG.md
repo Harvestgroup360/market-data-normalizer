@@ -3,6 +3,54 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.39.0] - 2026-09-13
+
+### Added
+- `breadth`: how many independent bets a cross-section of return series
+  actually contains. `independence` counts effective observations along the
+  time axis; this asks the same question across the names, where almost
+  nobody asks it.
+- **The error is silent because the position count is a fact.** Forty names
+  driven by one market really are forty names and the books really balance.
+  On the README panel they behave as 3.628 bets: the position count
+  overstates by 11.02x, and because breadth enters the fundamental law under
+  a square root, an information ratio computed on it is overstated by 3.32x.
+- **Two counts, and they are not two estimates of one quantity.**
+  `effective_bets` is the participation ratio of the correlation matrix's
+  eigenvalues; `effective_observations` is `n / (1 + (n-1)ro)`, what an
+  average of n correlated series is worth as a sample size. They coincide
+  only for the identity and for an all-ones matrix. Three names at ro = 0.5
+  are two bets and one and a half observations. The docstring says which
+  question each answers rather than presenting them as alternatives — an
+  earlier draft of this module claimed they agree on an equicorrelated matrix,
+  which is false, and the claim was caught by working the arithmetic before
+  release rather than after.
+- `BreadthReport.as_sample()` hands the cross-sectional count to
+  `mdnorm.deflate_t_stat` as an `EffectiveSample`, marked `estimated`, so the
+  two independence axes compose instead of being computed separately and
+  forgotten separately.
+- `eigenvalues` is a cyclic Jacobi rotation written for `Decimal` — no
+  runtime dependency is added. It stops when the off-diagonal mass reaches
+  the round-off floor of the working precision and stops shrinking, which is
+  the only sensible stopping rule for fixed-precision arithmetic, and raises
+  if the floor it settles at is large enough to matter.
+- Refusals, each with a reason in the message: a diagonal that is not exactly
+  one (a covariance matrix is not a correlation matrix), an asymmetric
+  matrix, a correlation outside [-1, 1], ragged input series (aligning them
+  is a decision about missing observations and belongs in `mdnorm.align`),
+  and a constant series (its correlation with anything is a division by zero,
+  and zero would read as "uncorrelated").
+- `thin_sample` reports fewer observations than names — the case where the
+  matrix is singular, part of the spectrum is noise, and the bet count is
+  biased in the flattering direction. Reported, not corrected.
+- `mdnorm breadth` takes a wide CSV of return columns and reports both counts,
+  the overstatement, and with `--eigenvalues` the share of variance each
+  direction carries.
+
+### Notes
+- 36 new tests. The suite is 1545. `mypy` passes clean.
+- No runtime dependencies. Python 3.10+.
+
 ## [1.38.0] - 2026-09-12
 
 ### Added

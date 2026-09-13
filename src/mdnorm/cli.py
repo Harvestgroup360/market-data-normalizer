@@ -2500,6 +2500,84 @@ def _cmd_multiverse(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_breadth(args: argparse.Namespace) -> int:
+    """How many independent bets a cross-section of return series contains."""
+    import csv as _csv
+
+    from .breadth import breadth_report, correlation_matrix, eigenvalues
+
+    columns: "dict[str, List[Decimal]]" = {}
+    try:
+        with open_text(args.input) as fh:
+            reader = _csv.DictReader(fh)
+            if reader.fieldnames is None:
+                print("error: the file has no header row", file=sys.stderr)
+                return 1
+            names = [f for f in reader.fieldnames if f != args.ts_field]
+            if not names:
+                print(f"error: no columns besides {args.ts_field!r}",
+                      file=sys.stderr)
+                return 1
+            for name in names:
+                columns[name] = []
+            for row in reader:
+                for name in names:
+                    raw = (row.get(name) or "").strip()
+                    if not raw:
+                        print(f"error: {name!r} has a blank value; align the "
+                              "series and decide what a gap means before "
+                              "correlating them", file=sys.stderr)
+                        return 1
+                    columns[name].append(Decimal(raw))
+    except (OSError, KeyError, ValueError, ArithmeticError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        matrix = correlation_matrix(columns)
+        rep = breadth_report(matrix)
+    except (ValueError, ArithmeticError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    def line(label: str, value: str) -> None:
+        print(f"{label:<22} {value}", file=sys.stderr)
+
+    line("names", str(rep.names))
+    line("observations", str(rep.observations))
+    line("average correlation", f"{rep.average_correlation:.4f}")
+    line("effective bets", f"{rep.effective_bets:.3f}")
+    line("effective observations", f"{rep.effective_observations:.3f}")
+    over, ratio = rep.overstatement, rep.ratio_overstatement
+    if over is not None and ratio is not None:
+        line("position count over", f"{over:.2f}x the bets")
+        line("  information ratio", f"{ratio:.2f}x overstated")
+    print("note: the two counts answer different questions. Bets is the "
+          "participation ratio of the eigenvalues; observations is what an "
+          "average of these series is worth as a sample size. They are not "
+          "interchangeable.", file=sys.stderr)
+    if rep.dominated_by_one_factor:
+        print("note: fewer than two effective bets. This cross-section is "
+              "one position wearing many tickers.", file=sys.stderr)
+    if rep.thin_sample:
+        print("note: fewer observations than names, so the correlation "
+              "matrix is singular and some of these eigenvalues are noise. "
+              "The bet count is biased upward, which is the flattering "
+              "direction.", file=sys.stderr)
+
+    if args.eigenvalues:
+        lam = eigenvalues(matrix)
+        total = sum(lam, Decimal(0))
+        print("eigenvalues", file=sys.stderr)
+        for i, v in enumerate(lam[:args.list_limit], start=1):
+            share = (v / total * 100) if total else Decimal(0)
+            print(f"  {i:>3}  {v:>12.6f}  {share:>6.2f}%", file=sys.stderr)
+        if len(lam) > args.list_limit:
+            print(f"  ... ({len(lam) - args.list_limit} more)",
+                  file=sys.stderr)
+    return 0
+
+
 def _cmd_reconcile(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -3455,6 +3533,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_mv.add_argument("--ts-field", default="ts_ns", metavar="NAME")
     p_mv.add_argument("--value-field", default="value", metavar="NAME")
     p_mv.set_defaults(func=_cmd_multiverse)
+
+    p_br = sub.add_parser("breadth",
+                          help="how many independent bets a cross-section of "
+                               "return series actually contains")
+    p_br.add_argument("input",
+                      help="CSV with one column per name, plus a timestamp "
+                           "column")
+    p_br.add_argument("--ts-field", default="ts_ns", metavar="NAME",
+                      help="the timestamp column to ignore (default: ts_ns)")
+    p_br.add_argument("--eigenvalues", action="store_true",
+                      help="list the eigenvalues and the share of variance "
+                           "each carries")
+    p_br.add_argument("--list-limit", type=int, default=10, metavar="N",
+                      help="how many eigenvalues to list (default: 10)")
+    p_br.set_defaults(func=_cmd_breadth)
 
 
     p_rc = sub.add_parser("reconcile",

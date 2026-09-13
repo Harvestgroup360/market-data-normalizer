@@ -11,9 +11,9 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Fifty tagged releases, thirty-seven of them published to PyPI (the
+Fifty-one tagged releases, thirty-eight of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 1509 tests, and a type checker that passes clean.
+dependencies, Python 3.10+, 1545 tests, and a type checker that passes clean.
 
 | Layer | Modules |
 | --- | --- |
@@ -24,13 +24,13 @@ dependencies, Python 3.10+, 1509 tests, and a type checker that passes clean.
 | Microstructure | `book`, `consolidate`, `micro` |
 | Execution | `execution` |
 | Research | `align`, `arrival`, `features`, `labels`, `revisions`, `mixfreq`, `seasonality` |
-| Evaluation | `metrics`, `costs`, `independence`, `extremes`, `windows`, `multiverse` |
+| Evaluation | `metrics`, `costs`, `independence`, `breadth`, `extremes`, `windows`, `multiverse` |
 | Reproducibility | `provenance` |
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
 Shipped since the last revision of this file: `mixfreq`, `membership`,
-`reconcile`, `calendars`, `fx`, `ticksize`, `arrival`, `seasonality`, `resolution`, `auctions`, `independence`, `staleness`, `halts`, `coverage`, `provenance`, `extremes`, `windows` and
-`multiverse`. The first two were the items that stood under
+`reconcile`, `calendars`, `fx`, `ticksize`, `arrival`, `seasonality`, `resolution`, `auctions`, `independence`, `staleness`, `halts`, `coverage`, `provenance`, `extremes`, `windows`,
+`multiverse` and `breadth`. The first two were the items that stood under
 *Under consideration* below; the other four were not on the list. `reconcile` is
 here because comparing two sources of the same series is the check people run
 before trusting either, and nothing in the library did it. A slow series now carries the
@@ -67,6 +67,20 @@ on the effective number of trials rather than the number itself. Deflating by
 it is conservative and still wrong, and estimating the effective count would
 need a model of how the decisions correlate. We do not have one, so we say so
 instead of shipping a number that looks like we do.
+
+`breadth` is the newest, and it is `independence` asked sideways. That module
+counts how many independent observations overlapping labels leave along the
+time axis; this one counts how many independent bets a correlation structure
+leaves across the names. Forty series driven by one market are 3.628 effective
+bets, so the position count overstates by eleven and — because breadth sits
+under a square root in the fundamental law — an information ratio computed on
+it is overstated by three. It reports two counts that are deliberately not
+interchangeable, and the eigenvalues come from a Jacobi rotation written for
+`Decimal`, which keeps the dependency list empty. An early draft of its
+documentation claimed the two counts agree on an equicorrelated matrix. They
+do not, the arithmetic says so plainly, and the claim was removed before
+release rather than after — which is the only reason it is worth mentioning
+here.
 
 Not a module, but the change in 1.24.0 belongs in this list: the trailing sum
 under `rolling_mean` is now slid instead of recomputed, which took it from

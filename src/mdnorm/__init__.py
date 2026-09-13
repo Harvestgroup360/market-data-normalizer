@@ -315,6 +315,16 @@ from .provenance import (
     verify,
     write_manifest,
 )
+from .breadth import (
+    BreadthReport,
+    CorrelationMatrix,
+    average_correlation,
+    breadth_report,
+    correlation_matrix,
+    effective_bets,
+    effective_observations,
+    eigenvalues,
+)
 from .multiverse import (
     Choice,
     ChoiceEffect,
@@ -356,7 +366,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.38.0"
+__version__ = "1.39.0"
 
 __all__ = [
     "MarketEvent",
@@ -654,6 +664,14 @@ __all__ = [
     "explore",
     "choice_effect",
     "dominant_choice",
+    "CorrelationMatrix",
+    "BreadthReport",
+    "correlation_matrix",
+    "average_correlation",
+    "eigenvalues",
+    "effective_bets",
+    "effective_observations",
+    "breadth_report",
     "Digest",
     "InputRef",
     "Manifest",
