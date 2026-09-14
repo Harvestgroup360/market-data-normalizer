@@ -2578,6 +2578,102 @@ def _cmd_breadth(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_exposure(args: argparse.Namespace) -> int:
+    """How much of a strategy's return survives its known factor exposures."""
+    import csv as _csv
+
+    from .exposure import alpha_stream, dominant_factor, factor_regression
+    from .metrics import sharpe_ratio
+
+    columns: "dict[str, List[Decimal]]" = {}
+    try:
+        with open_text(args.input) as fh:
+            reader = _csv.DictReader(fh)
+            if reader.fieldnames is None:
+                print("error: the file has no header row", file=sys.stderr)
+                return 1
+            if args.strategy not in reader.fieldnames:
+                print(f"error: no column named {args.strategy!r}",
+                      file=sys.stderr)
+                return 1
+            wanted = [f for f in reader.fieldnames if f != args.ts_field]
+            for name in wanted:
+                columns[name] = []
+            for row in reader:
+                for name in wanted:
+                    raw = (row.get(name) or "").strip()
+                    if not raw:
+                        print(f"error: {name!r} has a blank value; align the "
+                              "series and decide what a gap means before "
+                              "regressing them", file=sys.stderr)
+                        return 1
+                    columns[name].append(Decimal(raw))
+    except (OSError, KeyError, ValueError, ArithmeticError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    strategy = columns.pop(args.strategy)
+    if args.factors:
+        missing = [f for f in args.factors if f not in columns]
+        if missing:
+            print(f"error: no column named {missing[0]!r}", file=sys.stderr)
+            return 1
+        columns = {k: columns[k] for k in args.factors}
+
+    try:
+        rep = factor_regression(strategy, columns)
+        stream = alpha_stream(strategy, columns)
+    except (ValueError, ArithmeticError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    def line(label: str, value: str) -> None:
+        print(f"{label:<22} {value}", file=sys.stderr)
+
+    line("observations", str(rep.observations))
+    line("factors", str(rep.factors))
+    line("R squared", f"{rep.r_squared:.4f}")
+    line("mean return", f"{rep.mean_return:.8f}")
+    line("alpha", f"{rep.alpha:.8f}")
+    t = rep.alpha_t_stat
+    line("  t-statistic", "-" if t is None else f"{t:.3f}")
+    share = rep.alpha_share
+    if share is not None:
+        line("  share of the mean", f"{share * 100:.1f}%")
+    print("loadings", file=sys.stderr)
+    for loading in rep.loadings:
+        lt = loading.t_stat
+        print(f"  {loading.name:<18} beta {loading.beta:>10.4f}  "
+              f"t {('-' if lt is None else f'{lt:.2f}'):>8}  "
+              f"carries {loading.contribution:>12.8f}", file=sys.stderr)
+    top = dominant_factor(rep)
+    if top is not None:
+        line("dominant factor", f"{top.name} ({top.contribution:.8f})")
+
+    raw, net = sharpe_ratio(strategy), sharpe_ratio(stream)
+    if raw is not None and net is not None:
+        line("Sharpe, as reported", f"{raw:.4f}")
+        line("Sharpe, alpha only", f"{net:.4f}")
+
+    print("note: a residual no factor explains means the strategy is "
+          "orthogonal to the factors you supplied, which is a smaller claim "
+          "than the one people make with it. The absence of an exposure is "
+          "evidence about your factor list.", file=sys.stderr)
+    if rep.crowded:
+        print("note: fewer than ten observations per estimated term. The R "
+              "squared here means very little.", file=sys.stderr)
+
+    if args.write_alpha:
+        with open(args.write_alpha, "w", encoding="utf-8", newline="") as fh:
+            writer = _csv.writer(fh)
+            writer.writerow(["alpha"])
+            for value in stream:
+                writer.writerow([str(value)])
+        print(f"wrote {len(stream)} rows to {args.write_alpha}",
+              file=sys.stderr)
+    return 0
+
+
 def _cmd_reconcile(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -3548,6 +3644,25 @@ def build_parser() -> argparse.ArgumentParser:
     p_br.add_argument("--list-limit", type=int, default=10, metavar="N",
                       help="how many eigenvalues to list (default: 10)")
     p_br.set_defaults(func=_cmd_breadth)
+
+    p_ex = sub.add_parser("exposure",
+                          help="how much of a strategy's return survives its "
+                               "known factor exposures")
+    p_ex.add_argument("input",
+                      help="CSV with one column per series, including the "
+                           "strategy")
+    p_ex.add_argument("--strategy", required=True, metavar="NAME",
+                      help="the column holding the strategy's returns")
+    p_ex.add_argument("--factors", nargs="+", default=None, metavar="NAME",
+                      help="which columns are factors; left out, every other "
+                           "column is used")
+    p_ex.add_argument("--write-alpha", default=None, metavar="PATH",
+                      help="write the alpha stream — the strategy with the "
+                           "factor contributions removed and the intercept "
+                           "kept — to this CSV")
+    p_ex.add_argument("--ts-field", default="ts_ns", metavar="NAME",
+                      help="the timestamp column to ignore (default: ts_ns)")
+    p_ex.set_defaults(func=_cmd_exposure)
 
 
     p_rc = sub.add_parser("reconcile",

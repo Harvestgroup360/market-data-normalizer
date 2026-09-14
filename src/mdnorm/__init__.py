@@ -315,6 +315,14 @@ from .provenance import (
     verify,
     write_manifest,
 )
+from .exposure import (
+    ExposureReport,
+    FactorLoading,
+    alpha_stream,
+    dominant_factor,
+    factor_regression,
+    residuals,
+)
 from .breadth import (
     BreadthReport,
     CorrelationMatrix,
@@ -366,7 +374,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.39.0"
+__version__ = "1.40.0"
 
 __all__ = [
     "MarketEvent",
@@ -672,6 +680,12 @@ __all__ = [
     "effective_bets",
     "effective_observations",
     "breadth_report",
+    "FactorLoading",
+    "ExposureReport",
+    "factor_regression",
+    "residuals",
+    "alpha_stream",
+    "dominant_factor",
     "Digest",
     "InputRef",
     "Manifest",

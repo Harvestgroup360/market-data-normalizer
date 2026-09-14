@@ -11,9 +11,9 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Fifty-one tagged releases, thirty-eight of them published to PyPI (the
+Fifty-two tagged releases, thirty-nine of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 1545 tests, and a type checker that passes clean.
+dependencies, Python 3.10+, 1574 tests, and a type checker that passes clean.
 
 | Layer | Modules |
 | --- | --- |
@@ -24,13 +24,13 @@ dependencies, Python 3.10+, 1545 tests, and a type checker that passes clean.
 | Microstructure | `book`, `consolidate`, `micro` |
 | Execution | `execution` |
 | Research | `align`, `arrival`, `features`, `labels`, `revisions`, `mixfreq`, `seasonality` |
-| Evaluation | `metrics`, `costs`, `independence`, `breadth`, `extremes`, `windows`, `multiverse` |
+| Evaluation | `metrics`, `costs`, `independence`, `breadth`, `exposure`, `extremes`, `windows`, `multiverse` |
 | Reproducibility | `provenance` |
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
 Shipped since the last revision of this file: `mixfreq`, `membership`,
 `reconcile`, `calendars`, `fx`, `ticksize`, `arrival`, `seasonality`, `resolution`, `auctions`, `independence`, `staleness`, `halts`, `coverage`, `provenance`, `extremes`, `windows`,
-`multiverse` and `breadth`. The first two were the items that stood under
+`multiverse`, `breadth` and `exposure`. The first two were the items that stood under
 *Under consideration* below; the other four were not on the list. `reconcile` is
 here because comparing two sources of the same series is the check people run
 before trusting either, and nothing in the library did it. A slow series now carries the
@@ -81,6 +81,18 @@ documentation claimed the two counts agree on an equicorrelated matrix. They
 do not, the arithmetic says so plainly, and the claim was removed before
 release rather than after — which is the only reason it is worth mentioning
 here.
+
+`exposure` is the newest and the bluntest. It regresses a strategy on factors
+the caller supplies and reports how much of the mean return survives. On the
+worked example a headline annualised Sharpe of 1.16 becomes 0.55 once the
+market is subtracted, with a residual t-statistic of 1.2 — and the market
+carries three quarters of the mean. Two commitments come with it. No factor
+data will ever ship here, for the same reason no vendor does: bundling one
+would make every answer partly a property of whose definition of momentum we
+chose. And the module will not say a strategy has alpha. It reports what
+survives a list somebody else picked, because the absence of an exposure is
+evidence about the factor list rather than about the strategy, and that
+distinction is the whole reason the module is worth having.
 
 Not a module, but the change in 1.24.0 belongs in this list: the trailing sum
 under `rolling_mean` is now slid instead of recomputed, which took it from

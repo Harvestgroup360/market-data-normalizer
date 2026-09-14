@@ -602,6 +602,81 @@ for `AsOfSeries.delayed`: by_ns=412000 for the typical case, 3900000 for the
 case worth sizing against.
 ```
 
+### Alpha is what is left after the things you already knew about
+
+A strategy with a Sharpe ratio worth reporting is sometimes a strategy, and
+sometimes it is a factor everybody can already buy, wearing a new name. The
+return series of an exposure and the return series of an edge look identical:
+
+```python
+from mdnorm import factor_regression, alpha_stream, sharpe_ratio
+
+rep = factor_regression(strategy, {"market": mkt, "momentum": mom,
+                                   "value": val})
+rep.r_squared        # 0.8562
+rep.alpha            # 0.00010503 per period
+rep.alpha_t_stat     # 1.223 — not distinguishable from zero
+rep.alpha_share      # 0.18 — 18% of the mean return survives
+
+sharpe_ratio(strategy)                       # 1.16 annualised
+sharpe_ratio(alpha_stream(strategy, facs))   # 0.55 annualised
+```
+
+Five years of daily returns. The headline Sharpe is 1.16 and the market
+carries 0.00044607 of the 0.00058426 mean — three quarters of the return.
+What is left over is worth 0.55, and its t-statistic is 1.2.
+
+**The absence of an exposure is not evidence of alpha.** It is evidence about
+your factor list. A residual that no factor explains means the strategy is
+orthogonal to *the factors you supplied*, which is a much smaller claim than
+the one people make with it. This module will never tell you a strategy has
+alpha; it tells you how much survives a list you chose.
+
+**No factor data ships with this library and none ever will.** Bundling a
+factor set would make every answer partly a property of whose definition of
+momentum we vendored, and [ROADMAP.md](ROADMAP.md) already rules out tying the
+library to one feed. Bring your own series, and record where they came from —
+`mdnorm.provenance` exists for that.
+
+**One trap is in the arithmetic rather than the data.** A least-squares
+residual computed with an intercept has a mean of exactly zero, always, so a
+Sharpe ratio on it is zero whatever the alpha was. `residuals` returns that
+series, for looking at the *shape* of what the factors missed; `alpha_stream`
+returns the strategy with the factor contributions removed and the intercept
+kept, whose mean *is* the alpha. That is the series to put a ratio on, and it
+is the one nobody computes.
+
+```console
+$ mdnorm exposure returns.csv --strategy strategy
+observations           1260
+factors                3
+R squared              0.8562
+mean return            0.00058426
+alpha                  0.00010503
+  t-statistic          1.223
+  share of the mean    18.0%
+loadings
+  market             beta     0.6851  t    81.34  carries   0.00044607
+  momentum           beta     0.4157  t    28.19  carries   0.00003139
+  value              beta     0.0119  t     0.68  carries   0.00000177
+dominant factor        market (0.00044607)
+Sharpe, as reported    0.0729
+Sharpe, alpha only     0.0346
+```
+
+`dominant_factor` ranks by the return a factor carried, not by its beta and
+not by its t-statistic: a large loading on a factor that went nowhere carries
+nothing, and a significant coefficient is a statement about precision rather
+than about magnitude.
+
+**Choosing a factor list after seeing the strategy is a search.** Four
+candidates in every combination are fifteen regressions, and the one with the
+flattering residual is the best of fifteen. `mdnorm.multiverse` will enumerate
+that grid and hand you the count. **The loadings are also full-sample and
+constant** — a strategy that was fully exposed in the first half and flat in
+the second reports an average beta describing neither half, so run the
+regression across `mdnorm.windows` and watch whether the betas move.
+
 ### Five hundred names is not five hundred bets
 
 `mdnorm.independence` counts how many independent observations an

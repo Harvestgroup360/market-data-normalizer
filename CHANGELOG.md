@@ -3,6 +3,59 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.40.0] - 2026-09-14
+
+### Added
+- `exposure`: regress a strategy's returns on a set of factor returns and
+  report how much of the mean survives. A strategy with a Sharpe worth
+  reporting is sometimes a strategy and sometimes a factor everybody can
+  already buy, wearing a new name, and the two return series look identical.
+- **The worked example is the argument.** Five years of daily returns, a
+  headline annualised Sharpe of 1.16. The market carries 0.00044607 of the
+  0.00058426 mean — three quarters of the return. What survives is worth 0.55
+  annualised and carries a t-statistic of 1.2.
+- **The absence of an exposure is not evidence of alpha; it is evidence about
+  your factor list.** Stated in the module docstring, in the README and in the
+  CLI output, because it is the sentence this module exists to prevent people
+  from skipping. A residual no factor explains means the strategy is
+  orthogonal to the factors you supplied, which is a much smaller claim than
+  the one it gets used for.
+- **No factor data ships with the library and none ever will.** Bundling a
+  factor set would make every answer partly a property of whose definition of
+  momentum we vendored; ROADMAP.md already rules out tying the library to one
+  feed.
+- `residuals` and `alpha_stream` are separate functions, and the reason is a
+  trap in the arithmetic rather than in the data: a least-squares residual
+  computed with an intercept has a mean of exactly zero, always, so a Sharpe
+  ratio on it is zero whatever the alpha was. Our first draft offered only
+  `residuals` and its docstring suggested putting a Sharpe on it. That advice
+  would have read as "no alpha" in every case. `alpha_stream` keeps the
+  intercept and its mean is the alpha, which is the series a ratio, a
+  drawdown or a `windows` sweep belongs on.
+- `dominant_factor` ranks by the return a factor carried rather than by beta
+  or t-statistic: a large loading on a factor that went nowhere carries
+  nothing, and significance is a statement about precision rather than
+  magnitude.
+- Refusals that name what to fix rather than what failed: two identical
+  factors, or one that is the sum of two others, raise naming the column whose
+  coefficient is not identified; a constant factor is refused as the intercept
+  under another name; ragged series name the offender and its length; and a
+  fit with no room left over is refused rather than reported as perfect.
+- `crowded` flags fewer than ten observations per estimated term. It does not
+  switch to an adjusted R squared, which would hide the problem behind a
+  smaller number instead of naming it.
+- The ordinary least squares is solved through the normal equations with a
+  Gauss-Jordan inverse written for `Decimal` at fifty digits, so the
+  dependency list stays empty.
+- `mdnorm exposure` takes a wide CSV, reports the loadings with what each
+  carries, the alpha and its t-statistic, both Sharpe ratios, and with
+  `--write-alpha` writes the alpha stream out for the rest of the library to
+  work on.
+
+### Notes
+- 29 new tests. The suite is 1574. `mypy` passes clean.
+- No runtime dependencies. Python 3.10+.
+
 ## [1.39.0] - 2026-09-13
 
 ### Added
