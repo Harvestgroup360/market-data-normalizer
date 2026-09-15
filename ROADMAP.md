@@ -11,9 +11,9 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Fifty-two tagged releases, thirty-nine of them published to PyPI (the
+Fifty-three tagged releases, forty of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 1574 tests, and a type checker that passes clean.
+dependencies, Python 3.10+, 1608 tests, and a type checker that passes clean.
 
 | Layer | Modules |
 | --- | --- |
@@ -24,13 +24,13 @@ dependencies, Python 3.10+, 1574 tests, and a type checker that passes clean.
 | Microstructure | `book`, `consolidate`, `micro` |
 | Execution | `execution` |
 | Research | `align`, `arrival`, `features`, `labels`, `revisions`, `mixfreq`, `seasonality` |
-| Evaluation | `metrics`, `costs`, `independence`, `breadth`, `exposure`, `extremes`, `windows`, `multiverse` |
+| Evaluation | `metrics`, `costs`, `compounding`, `independence`, `breadth`, `exposure`, `extremes`, `windows`, `multiverse` |
 | Reproducibility | `provenance` |
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
 Shipped since the last revision of this file: `mixfreq`, `membership`,
 `reconcile`, `calendars`, `fx`, `ticksize`, `arrival`, `seasonality`, `resolution`, `auctions`, `independence`, `staleness`, `halts`, `coverage`, `provenance`, `extremes`, `windows`,
-`multiverse`, `breadth` and `exposure`. The first two were the items that stood under
+`multiverse`, `breadth`, `exposure` and `compounding`. The first two were the items that stood under
 *Under consideration* below; the other four were not on the list. `reconcile` is
 here because comparing two sources of the same series is the check people run
 before trusting either, and nothing in the library did it. A slow series now carries the
@@ -93,6 +93,18 @@ chose. And the module will not say a strategy has alpha. It reports what
 survives a list somebody else picked, because the absence of an exposure is
 evidence about the factor list rather than about the strategy, and that
 distinction is the whole reason the module is worth having.
+
+`compounding` is the newest and the most ordinary, which is why it took this
+long to notice was missing. An average monthly return of one per cent
+annualises to 12.68 per cent if you compound the average and to 12.05 in the
+account, and the gap is the variance — so the statistic flatters a book in
+proportion to its risk. Leverage is worse than proportional: two times the
+returns cost 3.97 times the drag on our example series. Worth recording that
+the module's first draft compared the sum of the returns against the
+compounded total and called the difference an overstatement. That comparison
+has no fixed sign, the account beats the sum about as often as it trails it,
+and the error survived until the numbers were actually run. It is in the
+changelog under its own heading.
 
 Not a module, but the change in 1.24.0 belongs in this list: the trailing sum
 under `rolling_mean` is now slid instead of recomputed, which took it from

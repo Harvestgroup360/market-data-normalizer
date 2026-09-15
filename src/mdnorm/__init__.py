@@ -315,6 +315,22 @@ from .provenance import (
     verify,
     write_manifest,
 )
+from .compounding import (
+    Annualised,
+    CompoundReport,
+    Convention,
+    annualise_return,
+    approximate_drag,
+    arithmetic_mean,
+    compound,
+    compound_report,
+    geometric_mean,
+    leverage_drag,
+    naive_total,
+    to_log,
+    to_simple,
+    variance_drag,
+)
 from .exposure import (
     ExposureReport,
     FactorLoading,
@@ -374,7 +390,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.40.0"
+__version__ = "1.41.0"
 
 __all__ = [
     "MarketEvent",
@@ -686,6 +702,20 @@ __all__ = [
     "residuals",
     "alpha_stream",
     "dominant_factor",
+    "Convention",
+    "Annualised",
+    "CompoundReport",
+    "arithmetic_mean",
+    "geometric_mean",
+    "compound",
+    "naive_total",
+    "variance_drag",
+    "approximate_drag",
+    "annualise_return",
+    "to_log",
+    "to_simple",
+    "leverage_drag",
+    "compound_report",
     "Digest",
     "InputRef",
     "Manifest",

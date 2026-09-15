@@ -3,6 +3,56 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.41.0] - 2026-09-15
+
+### Added
+- `compounding`: the arithmetic mean, the rate that actually compounds, and
+  the volatility that separates them. An average monthly return of one per
+  cent annualises to 12.6825 per cent if you compound the average and to
+  12.0539 per cent in the account — a gap of sixty-three basis points, or
+  5.22 per cent of everything earned.
+- **The direction is guaranteed, the size is not.** The geometric mean never
+  exceeds the arithmetic one, so compounding the average always overstates,
+  and the amount depends on the variance alone. The flattery therefore grows
+  with the risk: about half a point a year at ten per cent volatility, about
+  eight at forty.
+- `leverage_drag` applies the multiple and recomputes rather than scaling the
+  rule of thumb. On the README series two times leverage costs 3.97 times the
+  unlevered drag and three times costs 8.87. Only the returns are scaled —
+  financing, borrow and the path-dependence of a daily reset are named in the
+  docstring as real and unmodelled, so the figure is a lower bound rather than
+  an estimate.
+- `approximate_drag` reports the sigma-squared-over-two rule of thumb beside
+  the exact figure instead of in place of it. They agree to a basis point on
+  monthly equity returns and separate on large periods, and the size of the
+  disagreement is the point, since the approximation is what most reports are
+  built on.
+- `Convention` is required on every call. A log return and a simple return are
+  different numbers in identically shaped files, and `to_log` and `to_simple`
+  convert rather than guess.
+- Exactly -1 is accepted as a simple return and anything below it is refused
+  by index: an account can reach zero and cannot go past it. The message
+  suggests `Convention.LOG`, because a log series fed in as simple is the
+  error this catches.
+
+### Fixed before release
+- The first draft of this module reported the sum of the returns against the
+  compounded total and called the difference "the overstatement". That is
+  wrong about half the time: compounding adds every cross-product, which helps
+  a series with a positive mean and modest volatility and hurts a volatile
+  one. On the README series the account *beats* the sum. The figure is now
+  `total_gap`, its docstring says the sign is not fixed and why, and the
+  comparison that does have a guaranteed direction was added as
+  `CompoundReport.annualised`. Recorded here rather than quietly corrected,
+  because a claim about a fixed direction that holds half the time is exactly
+  the class of error the rest of the library exists to catch.
+
+### Notes
+- 34 new tests, including one that checks the geometric-never-exceeds-
+  arithmetic inequality on a hundred random series rather than asserting it.
+  The suite is 1608. `mypy` passes clean.
+- No runtime dependencies. Python 3.10+.
+
 ## [1.40.0] - 2026-09-14
 
 ### Added

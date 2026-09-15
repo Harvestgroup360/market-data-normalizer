@@ -2674,6 +2674,70 @@ def _cmd_exposure(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_compounding(args: argparse.Namespace) -> int:
+    """The average, the rate that compounds, and what separates them."""
+    from .compounding import Convention, compound_report, leverage_drag
+
+    try:
+        rows = read_samples_csv(args.input, ts_column=args.ts_field,
+                                value_column=args.value_field)
+    except (KeyError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    values = [r.value for r in rows]
+    convention = (Convention.LOG if args.convention == "log"
+                  else Convention.SIMPLE)
+    try:
+        rep = compound_report(values, convention=convention)
+    except (ValueError, ArithmeticError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    def line(label: str, value: str) -> None:
+        print(f"{label:<22} {value}", file=sys.stderr)
+
+    line("observations", str(rep.observations))
+    line("convention", rep.convention.value)
+    line("arithmetic mean", f"{rep.arithmetic:.6f}")
+    line("geometric mean", f"{rep.geometric:.6f}")
+    line("drag per period", f"{rep.drag:.6f}")
+    line("  sigma squared / 2", f"{rep.approximate_drag:.6f}")
+    line("volatility", f"{rep.volatility:.6f}")
+    line("compounded total", f"{rep.actual_total:.6f}")
+    line("sum of returns", f"{rep.naive_total:.6f}")
+    print("note: the sum is not an overstatement in a fixed direction. "
+          "Compounding adds the cross-products, which help a positive series "
+          "and hurt a volatile one. The comparison with a guaranteed sign is "
+          "the annualised one.", file=sys.stderr)
+
+    if args.periods:
+        year = rep.annualised(periods_per_year=args.periods)
+        print(f"annualised at {args.periods} periods", file=sys.stderr)
+        line("  average compounded", f"{year.naive:.6f}")
+        line("  actual", f"{year.actual:.6f}")
+        line("  overstated by", f"{year.overstatement:.6f}")
+        share = year.overstatement_share
+        if share is not None:
+            line("  as a share", f"{share * 100:.2f}%")
+
+    for multiple in args.leverage or []:
+        try:
+            drag = leverage_drag(values, multiple=Decimal(multiple),
+                                 convention=convention)
+        except (ValueError, ArithmeticError) as exc:
+            print(f"  {multiple}x: {exc}", file=sys.stderr)
+            continue
+        ratio = (drag / rep.drag) if rep.drag else None
+        tail = "" if ratio is None else f"  ({ratio:.2f}x the unlevered drag)"
+        line(f"  leverage {multiple}x drag", f"{drag:.6f}{tail}")
+    if args.leverage:
+        print("note: only the returns are scaled. Financing, borrow and the "
+              "path-dependence of a daily reset are real and are not modelled "
+              "here, so this is a lower bound on what leverage costs.",
+              file=sys.stderr)
+    return 0
+
+
 def _cmd_reconcile(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -3663,6 +3727,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_ex.add_argument("--ts-field", default="ts_ns", metavar="NAME",
                       help="the timestamp column to ignore (default: ts_ns)")
     p_ex.set_defaults(func=_cmd_exposure)
+
+    p_cp = sub.add_parser("compounding",
+                          help="the average, the rate that actually compounds, "
+                               "and what the volatility takes between them")
+    p_cp.add_argument("input", help="CSV of ts_ns,value")
+    p_cp.add_argument("--convention", required=True,
+                      choices=["simple", "log"],
+                      help="which kind of return the file holds; there is no "
+                           "default because the two are different numbers in "
+                           "identically shaped files")
+    p_cp.add_argument("--periods", type=int, default=None, metavar="N",
+                      help="annualise at this many periods a year and show "
+                           "both the flattering figure and the true one")
+    p_cp.add_argument("--leverage", nargs="+", default=None, metavar="X",
+                      help="also report the drag at these leverage multiples")
+    p_cp.add_argument("--ts-field", default="ts_ns", metavar="NAME")
+    p_cp.add_argument("--value-field", default="value", metavar="NAME")
+    p_cp.set_defaults(func=_cmd_compounding)
 
 
     p_rc = sub.add_parser("reconcile",

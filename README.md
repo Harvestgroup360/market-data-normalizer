@@ -602,6 +602,81 @@ for `AsOfSeries.delayed`: by_ns=412000 for the typical case, 3900000 for the
 case worth sizing against.
 ```
 
+### The average of your returns is not the return you earned
+
+An average monthly return of one per cent does not annualise to 12.68 per
+cent, which is what compounding the average gives. It annualises to what the
+account did:
+
+```python
+from mdnorm import compound_report, Convention
+
+rep = compound_report(monthly, convention=Convention.SIMPLE)
+rep.arithmetic                 # 0.010000 — the number in the deck
+rep.geometric                  # 0.009529 — the rate that compounds
+rep.drag                       # 0.000471 per month
+
+year = rep.annualised(periods_per_year=12)
+year.naive                     # 0.126825 — the average, compounded
+year.actual                    # 0.120539 — what the account did
+year.overstatement             # 0.006286 — sixty-three basis points
+```
+
+**The direction is guaranteed and the size is not.** The geometric mean never
+exceeds the arithmetic one — an inequality, not a tendency — so compounding
+the average always overstates. How much depends on the variance alone, which
+means **the flattery grows with the risk**. At ten per cent annual volatility
+the drag is about half a point a year; at forty per cent it is about eight.
+That is the wrong way round for a statistic to behave.
+
+**Leverage is worse than proportional.** Doubling every period return roughly
+quadruples the drag, because the variance term is squared while the mean is
+only doubled. `leverage_drag` applies the multiple and recomputes rather than
+scaling a rule of thumb — 3.97× and 8.87× on the example below, against the
+2× and 3× a reader would guess. Only the returns are scaled: financing, borrow
+and the path-dependence of a daily reset are real and are not modelled, so it
+is a lower bound on what leverage costs rather than an estimate of it.
+
+**One comparison has no fixed direction, and it is the one people reach for.**
+The sum of the returns is not reliably above or below the compounded total:
+compounding adds every cross-product, which helps a positive series and hurts a
+volatile one. `total_gap` reports it and says so. An earlier draft of this
+module called that figure "the overstatement", which would have been wrong
+about half the time; the comparison with a guaranteed sign is the annualised
+one above.
+
+```console
+$ mdnorm compounding monthly.csv --convention simple --periods 12 --leverage 2 3
+observations           12
+convention             simple
+arithmetic mean        0.010000
+geometric mean         0.009529
+drag per period        0.000471
+  sigma squared / 2    0.000475
+volatility             0.030822
+compounded total       0.120539
+sum of returns         0.120000
+annualised at 12 periods
+  average compounded   0.126825
+  actual               0.120539
+  overstated by        0.006286
+  as a share           5.22%
+  leverage 2x drag     0.001869  (3.97x the unlevered drag)
+  leverage 3x drag     0.004177  (8.87x the unlevered drag)
+```
+
+The σ²/2 rule of thumb is reported beside the exact figure rather than used in
+place of it. They agree to a basis point on monthly equity returns and part
+company as soon as periods get large, and the size of that disagreement is
+itself worth seeing, since the approximation is what most reports are built on.
+
+**Nothing here guesses your convention.** A log return and a simple return are
+different numbers living in identically shaped files, and compounding one as
+though it were the other is exactly the kind of silent error this library
+exists to catch. `Convention` is required on every call, and there is no
+default annualisation factor either — for the reason
+[ROADMAP.md](ROADMAP.md) already gives.
+
 ### Alpha is what is left after the things you already knew about
 
 A strategy with a Sharpe ratio worth reporting is sometimes a strategy, and
