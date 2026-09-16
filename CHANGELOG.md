@@ -3,6 +3,64 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.42.0] - 2026-09-16
+
+### Added
+- `serial`: what serial correlation does to an annualised Sharpe ratio.
+  Multiplying a per-period figure by the square root of the calendar is not a
+  unit conversion — it is an assumption that the returns are independent, and
+  a smoothed series violates it in the direction that flatters. On twenty
+  years of monthly returns with a lag-one autocorrelation of 0.238, the naive
+  annualised Sharpe is 0.671692 and the honest one is 0.486672.
+- `scaling_factor` is Lo (2002): `q / sqrt(q + 2 * sum (q - k) * rho_k)`. With
+  every autocorrelation zero it returns `sqrt(q)` exactly, so the familiar
+  factor is the special case rather than the rule. `annualise_sharpe` in this
+  module is the serially correct counterpart to the one in `metrics`; pass the
+  same per-period ratio to both and the difference is what the independence
+  assumption was worth.
+- **The direction is not fixed and the naming says so.** Negative
+  autocorrelation makes the square root of time understate, so
+  `ScalingFactor.naive_overstates` reports which case a series is in and
+  `SerialReport.difference` carries no claim about its own sign. This is the
+  same lesson `compounding.total_gap` learned in 1.41.0, applied before
+  shipping rather than after.
+- **Truncation is reported rather than hidden.** The factor wants `q - 1`
+  autocorrelations and a caller annualising daily returns will not have 251
+  worth trusting. Supplying fewer treats the rest as zero, which pulls the
+  result toward the naive answer — the flattering direction on a positively
+  autocorrelated series. `lags_used`, `lags_needed` and `truncated` make a
+  truncated result read as a lower bound on the correction.
+- `variance_ratio` states the same fact without a Sharpe ratio: whether the
+  variance of `q`-period returns is `q` times the variance of one-period
+  returns. Its finite-sample bias toward one is documented and measured — on
+  four thousand draws from a process whose asymptotic ratio at twelve periods
+  is 1.857, the estimator returns about 1.66 — because the bias makes a
+  dependent series look independent and a reader should know which way it
+  runs.
+- `long_run_variance` is Newey-West with Bartlett weights, the variance that
+  belongs under the square root of a standard error once a series is
+  autocorrelated. The declining weights are not decoration: a raw sum of
+  autocovariances can come out negative, and the taper guarantees it cannot.
+  On the README series it and `variance_ratio` corroborate each other
+  independently, 1.90 against 1.91.
+- Refusals over plausible answers, as elsewhere. A weighted autocorrelation
+  sum that drives the implied multi-period variance to zero or below raises
+  rather than returning a small factor; a constant series raises rather than
+  reporting an autocorrelation of zero, because zero there would read as
+  evidence of independence instead of absence of data.
+- `mdnorm serial` on the command line, with `--periods` and `--max-lag`
+  required and no defaults for either — how far dependence runs is a property
+  of the series, and the same file annualises to two different numbers on a
+  24/7 venue and a six-hour session.
+
+### Notes
+- `serial` sits beside `independence` and answers a different question with
+  the same input. That module counts how many independent observations an
+  autocorrelated series leaves for a t-statistic; this one counts what the
+  correlation does to a figure that was scaled by a square root. Both are
+  reachable from one series and they move together.
+- No new dependencies. 1,648 tests, type checker clean.
+
 ## [1.41.0] - 2026-09-15
 
 ### Added

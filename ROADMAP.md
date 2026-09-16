@@ -11,9 +11,9 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Fifty-three tagged releases, forty of them published to PyPI (the
+Fifty-four tagged releases, forty-one of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 1608 tests, and a type checker that passes clean.
+dependencies, Python 3.10+, 1648 tests, and a type checker that passes clean.
 
 | Layer | Modules |
 | --- | --- |
@@ -24,13 +24,13 @@ dependencies, Python 3.10+, 1608 tests, and a type checker that passes clean.
 | Microstructure | `book`, `consolidate`, `micro` |
 | Execution | `execution` |
 | Research | `align`, `arrival`, `features`, `labels`, `revisions`, `mixfreq`, `seasonality` |
-| Evaluation | `metrics`, `costs`, `compounding`, `independence`, `breadth`, `exposure`, `extremes`, `windows`, `multiverse` |
+| Evaluation | `metrics`, `costs`, `compounding`, `serial`, `independence`, `breadth`, `exposure`, `extremes`, `windows`, `multiverse` |
 | Reproducibility | `provenance` |
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
 Shipped since the last revision of this file: `mixfreq`, `membership`,
 `reconcile`, `calendars`, `fx`, `ticksize`, `arrival`, `seasonality`, `resolution`, `auctions`, `independence`, `staleness`, `halts`, `coverage`, `provenance`, `extremes`, `windows`,
-`multiverse`, `breadth`, `exposure` and `compounding`. The first two were the items that stood under
+`multiverse`, `breadth`, `exposure`, `compounding` and `serial`. The first two were the items that stood under
 *Under consideration* below; the other four were not on the list. `reconcile` is
 here because comparing two sources of the same series is the check people run
 before trusting either, and nothing in the library did it. A slow series now carries the
@@ -68,7 +68,35 @@ it is conservative and still wrong, and estimating the effective count would
 need a model of how the decisions correlate. We do not have one, so we say so
 instead of shipping a number that looks like we do.
 
-`breadth` is the newest, and it is `independence` asked sideways. That module
+`serial` is the newest, and it closes a gap the library had been walking past.
+Every other module here is careful about the numbers going in; this one is
+about the last multiplication on the way out. Annualising a Sharpe ratio by
+the square root of the calendar is correct only for independent returns, and
+a smoothed series — an appraisal mark, a stale quote, a price on something
+that did not trade — is not independent. Twenty years of monthly returns with
+a lag-one autocorrelation of 0.238 annualise to 0.671692 by the familiar
+factor and to 0.486672 by Lo's, and nothing in the data is wrong in either
+case.
+
+Two decisions in it are worth recording. The first is that the report refuses
+to promise a direction: negative autocorrelation makes the square root of time
+understate, so the gap is called a difference and a flag says which way this
+series runs. That is the `total_gap` lesson from 1.41.0, applied before
+shipping instead of after. The second is that truncation is surfaced rather
+than smoothed over. The factor wants `q - 1` autocorrelations and nobody
+annualising daily returns has 251 worth trusting; supplying fewer treats the
+rest as zero, which pulls the answer back toward the naive one. That is the
+flattering direction on a correlated series, so a truncated result is labelled
+a lower bound on the correction rather than an estimate of it.
+
+It also ships a measured caveat rather than a claimed one. The variance ratio
+is biased toward one at long horizons because overlapping windows share
+observations, and we state the size: on four thousand draws from a process
+whose asymptotic ratio at twelve periods is 1.857, the estimator returns about
+1.66. The bias makes a dependent series look independent, which is the
+direction a reader needs to know about.
+
+`breadth` is `independence` asked sideways. That module
 counts how many independent observations overlapping labels leave along the
 time axis; this one counts how many independent bets a correlation structure
 leaves across the names. Forty series driven by one market are 3.628 effective

@@ -331,6 +331,14 @@ from .compounding import (
     to_simple,
     variance_drag,
 )
+from .serial import (
+    ScalingFactor,
+    SerialReport,
+    long_run_variance,
+    scaling_factor,
+    serial_report,
+    variance_ratio,
+)
 from .exposure import (
     ExposureReport,
     FactorLoading,
@@ -390,7 +398,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.41.0"
+__version__ = "1.42.0"
 
 __all__ = [
     "MarketEvent",
@@ -716,6 +724,12 @@ __all__ = [
     "to_simple",
     "leverage_drag",
     "compound_report",
+    "ScalingFactor",
+    "SerialReport",
+    "scaling_factor",
+    "long_run_variance",
+    "variance_ratio",
+    "serial_report",
     "Digest",
     "InputRef",
     "Manifest",

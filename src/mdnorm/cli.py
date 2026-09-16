@@ -2738,6 +2738,85 @@ def _cmd_compounding(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_serial(args: argparse.Namespace) -> int:
+    """What the square root of time assumed, and what it was worth."""
+    from .serial import long_run_variance, serial_report
+
+    try:
+        rows = read_samples_csv(args.input, ts_column=args.ts_field,
+                                value_column=args.value_field)
+    except (KeyError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    values = [r.value for r in rows]
+    try:
+        rep = serial_report(values, periods_per_year=args.periods,
+                            max_lag=args.max_lag)
+    except (ValueError, ArithmeticError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    def line(label: str, value: str) -> None:
+        print(f"{label:<24} {value}", file=sys.stderr)
+
+    line("observations", str(rep.observations))
+    line("periods per year", str(rep.periods_per_year))
+    first = rep.first_order
+    if first is not None:
+        line("autocorrelation lag 1", f"{first:.6f}")
+    for i, rho in enumerate(rep.autocorrelations[1:args.show], start=2):
+        line(f"                lag {i}", f"{rho:.6f}")
+    if rep.thin_lags:
+        print("note: the deepest lag rests on fewer than thirty pairs. The "
+              "estimate is reported, not corrected.", file=sys.stderr)
+
+    line("naive factor", f"{rep.factor.naive:.6f}")
+    line("corrected factor", f"{rep.factor.corrected:.6f}")
+    line("  ratio", f"{rep.factor.ratio:.6f}")
+    line("  lags used", f"{rep.factor.lags_used} of {rep.factor.lags_needed}")
+    if rep.factor.truncated:
+        print("note: lags past those supplied were treated as zero, which "
+              "pulls the corrected factor toward the naive one. On a "
+              "positively autocorrelated series that is the flattering "
+              "direction, so this is a lower bound on the correction.",
+              file=sys.stderr)
+
+    if rep.sharpe is not None:
+        line("sharpe per period", f"{rep.sharpe:.6f}")
+        line("  annualised, naive", f"{rep.naive_annualised:.6f}")
+        line("  annualised, corrected", f"{rep.corrected_annualised:.6f}")
+        line("  difference", f"{rep.difference:.6f}")
+        if rep.factor.naive_overstates:
+            print("note: the square root of time overstates this series.",
+                  file=sys.stderr)
+        else:
+            print("note: the square root of time UNDERstates this series. "
+                  "Negative autocorrelation runs the other way, and the "
+                  "correction is not always a haircut.", file=sys.stderr)
+    else:
+        print("note: the series has no Sharpe ratio, so there is nothing to "
+              "annualise.", file=sys.stderr)
+
+    if rep.variance_ratio is not None:
+        line("variance ratio", f"{rep.variance_ratio:.6f}")
+        print("note: biased toward one at long horizons. A ratio near one is "
+              "weak evidence of independence; a ratio far from one is strong "
+              "evidence against it.", file=sys.stderr)
+
+    if args.hac is not None:
+        try:
+            lrv = long_run_variance(values, max_lag=args.hac)
+            plain = long_run_variance(values, max_lag=0)
+        except ValueError as exc:
+            print(f"  long-run variance: {exc}", file=sys.stderr)
+        else:
+            line("long-run variance", f"{lrv:.10f}")
+            line("  ordinary variance", f"{plain:.10f}")
+            if plain:
+                line("  ratio", f"{lrv / plain:.6f}")
+    return 0
+
+
 def _cmd_reconcile(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -3745,6 +3824,29 @@ def build_parser() -> argparse.ArgumentParser:
     p_cp.add_argument("--ts-field", default="ts_ns", metavar="NAME")
     p_cp.add_argument("--value-field", default="value", metavar="NAME")
     p_cp.set_defaults(func=_cmd_compounding)
+
+
+    p_sr = sub.add_parser("serial",
+                          help="what serial correlation does to an annualised "
+                               "Sharpe ratio; the square root of time is an "
+                               "assumption, not a unit conversion")
+    p_sr.add_argument("input", help="CSV of ts_ns,value")
+    p_sr.add_argument("--periods", type=int, required=True, metavar="N",
+                      help="periods in a year; there is no default because "
+                           "the same file annualises to two different numbers "
+                           "on a 24/7 venue and a six-hour session")
+    p_sr.add_argument("--max-lag", type=int, required=True, metavar="K",
+                      help="how many autocorrelations to estimate; no default "
+                           "because how far the dependence runs is a property "
+                           "of the series")
+    p_sr.add_argument("--show", type=int, default=1, metavar="K",
+                      help="print this many autocorrelations (default 1)")
+    p_sr.add_argument("--hac", type=int, default=None, metavar="L",
+                      help="also report the Newey-West long-run variance at "
+                           "this truncation lag")
+    p_sr.add_argument("--ts-field", default="ts_ns", metavar="NAME")
+    p_sr.add_argument("--value-field", default="value", metavar="NAME")
+    p_sr.set_defaults(func=_cmd_serial)
 
 
     p_rc = sub.add_parser("reconcile",

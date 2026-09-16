@@ -1800,6 +1800,68 @@ why the number is worth having.
 $ mdnorm mixfreq daily.csv --interval 60000000000 --lag 900000000000 -o joined.csv
 ```
 
+### The square root of time is a claim about independence
+
+Annualising a Sharpe ratio means multiplying by the square root of the
+calendar. That step looks like a unit conversion and is an assumption: it is
+correct only if the returns are serially uncorrelated. A smoothed series — an
+appraisal mark, a stale quote, a model price on something that did not trade —
+has an autocorrelation well above zero, and then the familiar factor is simply
+the wrong number.
+
+```python
+from mdnorm import serial_report
+
+rep = serial_report(monthly, periods_per_year=12, max_lag=11)
+
+rep.first_order              # 0.238055 — last month is still in this month
+rep.factor.naive             # 3.464102 — the square root of twelve
+rep.factor.corrected         # 2.509901 — what this series supports
+rep.factor.naive_overstates  # True
+
+rep.sharpe                   # 0.193901 per month
+rep.naive_annualised         # 0.671692 — the figure that gets reported
+rep.corrected_annualised     # 0.486672 — the one the series earns
+rep.variance_ratio           # 1.911987 — the same fact without a Sharpe
+```
+
+**The correction is Lo's, and it reduces to the familiar factor.** For a
+horizon of `q` the honest multiplier is `q / sqrt(q + 2 * sum (q - k) * rho_k)`.
+Set every autocorrelation to zero and it returns `sqrt(q)` exactly. The square
+root of time is the special case, not the general rule.
+
+**The direction is not fixed.** Negative autocorrelation — bid-ask bounce, a
+mean-reverting spread — makes `sqrt(q)` *understate*. `naive_overstates` says
+which case a series is in, and the gap is called `difference` rather than an
+overstatement because a name asserting a direction would be wrong half the
+time.
+
+**Truncation is reported, because it flatters.** Lo's factor wants `q - 1`
+autocorrelations; annualising daily returns wants 251, and past the first few
+those rest on too little data to mean anything. Supplying fewer is normal and
+treats the rest as zero, which pulls the answer back toward the naive one.
+`ScalingFactor` carries `lags_used`, `lags_needed` and `truncated`, so a
+truncated result reads as a lower bound on the correction rather than an
+estimate of it.
+
+**Two independent corroborations, not one number.** `variance_ratio` asks
+whether `q`-period variance is `q` times one-period variance, and
+`long_run_variance` is the Newey-West figure that belongs under the square
+root of a standard error. On the series above they agree with each other —
+1.91 and 1.90 against an ordinary variance — which is the check worth running
+before trusting any of the three.
+
+**The estimator is biased toward independence, and we say so.** The variance
+ratio drifts toward one at long horizons because overlapping windows share
+observations: on four thousand draws from a process whose asymptotic ratio is
+1.86, it returns about 1.66. So a ratio near one is weak evidence of
+independence and a ratio far from it is strong evidence against — the error
+runs in the direction that makes a dependent series look clean.
+
+```console
+$ mdnorm serial monthly.csv --periods 12 --max-lag 11 --show 4 --hac 11
+```
+
 ### How much of the result is the search
 
 Everything above is about getting the data right. The last step is a correct
