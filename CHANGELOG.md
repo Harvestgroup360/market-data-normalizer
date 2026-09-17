@@ -3,6 +3,55 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.43.0] - 2026-09-17
+
+### Added
+- `underwater`: drawdown depth, duration, and the fact that the headline
+  figure is an order statistic. A maximum drawdown is the worst single
+  observation in a sample, so it grows with the length of the sample — the
+  same unchanged returns give a median worst decline of 0.1344 over a year and
+  0.2982 over ten. Two backtests of different lengths are not reporting the
+  same quantity, and nothing in either one says so.
+- `ulcer_index` (root mean square depth, Martin and McCann 1989) and
+  `pain_index` (mean depth) read every observation instead of one.
+  `UnderwaterReport.concentration` is their ratio to the maximum: near one the
+  curve spent the sample close to its worst, near zero the maximum was a
+  single excursion. On the README series the deepest drawdown is 0.208839 and
+  the ulcer index is 0.088358.
+- **Duration, which is usually absent from the report entirely.** Down eight
+  per cent for three weeks and down eight per cent for three years produce the
+  same drawdown figure. `longest_underwater` and `underwater_share` separate
+  them: the README strategy has a 20.9 per cent maximum and spent 92.94 per
+  cent of five years below a previous high, with one stretch of 281 trading
+  days without a new one.
+- `resampled_max_drawdown` answers the length question from the caller's own
+  returns rather than from a closed form, and returns a distribution because
+  the worst drawdown of a sample is itself random. **Its assumption is stated
+  rather than buried:** drawing with replacement destroys serial correlation,
+  losses that arrive in runs make drawdowns deeper, so on a positively
+  autocorrelated series the result is a lower bound on the drawdown — the
+  flattering direction. `serial` from 1.42.0 is how a caller finds out whether
+  that applies to them, and the CLI note points at it.
+- A decline still open at the final observation is reported at its length so
+  far and flagged with `open_at_end`, never closed at the end of the sample.
+  Closing it would turn "we do not know yet" into "it ended here".
+- Refusals over plausible answers, as elsewhere. A running peak of zero or
+  below raises and names the observation, because a percentage depth under a
+  non-positive peak is arbitrary and the usual cause is a series of returns
+  passed where an equity curve belongs; the message says so. A curve that
+  never fell reports `never_fell` and a `concentration` of `None` rather than
+  zeros that would read as excellence.
+- `mdnorm underwater` on the command line, with `--returns` to compound a
+  return series first and `--horizon` to show the length effect.
+
+### Notes
+- `underwater_report().deepest` and `metrics.max_drawdown().depth` are the
+  same quantity computed twice and agree to more than thirty digits. They are
+  not bit-identical: this module works at forty significant digits and
+  `metrics` at thirty-four, a per-module choice, and the test asserts the
+  agreement rather than the identity.
+- No new dependencies. 1,683 tests, type checker clean.
+
 ## [1.42.0] - 2026-09-16
 
 ### Added

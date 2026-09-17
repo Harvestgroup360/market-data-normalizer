@@ -2817,6 +2817,91 @@ def _cmd_serial(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_underwater(args: argparse.Namespace) -> int:
+    """How deep, how long, and how much of it rests on one observation."""
+    from .underwater import (depth_quantile, resampled_max_drawdown,
+                             underwater_report)
+
+    try:
+        rows = read_samples_csv(args.input, ts_column=args.ts_field,
+                                value_column=args.value_field)
+    except (KeyError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    values = [r.value for r in rows]
+
+    if args.returns:
+        curve = [Decimal(1)]
+        for r in values:
+            if r <= -1:
+                print(f"error: a return of {r} empties the account",
+                      file=sys.stderr)
+                return 1
+            curve.append(curve[-1] * (Decimal(1) + r))
+        returns = values
+    else:
+        curve = values
+        returns = None
+
+    try:
+        rep = underwater_report(curve)
+    except (ValueError, ArithmeticError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    def line(label: str, value: str) -> None:
+        print(f"{label:<26} {value}", file=sys.stderr)
+
+    line("observations", str(rep.observations))
+    if rep.never_fell:
+        print("the curve never fell; there is no drawdown to report",
+              file=sys.stderr)
+        return 0
+
+    line("deepest drawdown", f"{rep.deepest:.6f}")
+    line("ulcer index", f"{rep.ulcer:.6f}")
+    line("pain index", f"{rep.pain:.6f}")
+    line("  ulcer / deepest", f"{rep.concentration:.6f}")
+    line("median depth", f"{depth_quantile(curve, level=Decimal('0.5')):.6f}")
+    line("95th percentile depth",
+         f"{depth_quantile(curve, level=Decimal('0.95')):.6f}")
+    line("periods under water",
+         f"{rep.periods_under_water} ({rep.underwater_share * 100:.2f}%)")
+    line("longest stretch", str(rep.longest_underwater))
+    line("open at the end", "yes" if rep.open_at_end else "no")
+    print("note: the deepest drawdown is the worst single observation in the "
+          "sample. The ulcer and pain indices read every observation, so no "
+          "one day can set them.", file=sys.stderr)
+    if rep.open_at_end:
+        print("note: the sample ends below a previous peak. That decline is "
+              "reported at its length so far and is not closed at the final "
+              "observation.", file=sys.stderr)
+
+    if args.horizon:
+        if returns is None:
+            print("error: --horizon needs returns; pass --returns",
+                  file=sys.stderr)
+            return 1
+        print("worst drawdown by horizon, from reshuffling these returns",
+              file=sys.stderr)
+        for periods in args.horizon:
+            try:
+                sim = resampled_max_drawdown(returns, periods=periods,
+                                             paths=args.paths, seed=args.seed)
+            except (ValueError, ArithmeticError) as exc:
+                print(f"  {periods}: {exc}", file=sys.stderr)
+                continue
+            line(f"  {periods} periods, median", f"{sim.median:.6f}")
+            line("    90th percentile",
+                 f"{sim.quantile(Decimal('0.9')):.6f}")
+        print("note: reshuffling assumes the order of the returns does not "
+              "matter. It does not for an independent series and it does for "
+              "an autocorrelated one, where losses arrive in runs and real "
+              "drawdowns run deeper than this. Check with `mdnorm serial`.",
+              file=sys.stderr)
+    return 0
+
+
 def _cmd_reconcile(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -3847,6 +3932,28 @@ def build_parser() -> argparse.ArgumentParser:
     p_sr.add_argument("--ts-field", default="ts_ns", metavar="NAME")
     p_sr.add_argument("--value-field", default="value", metavar="NAME")
     p_sr.set_defaults(func=_cmd_serial)
+
+
+    p_uw = sub.add_parser("underwater",
+                          help="drawdown depth, duration and the part that "
+                               "rests on a single observation")
+    p_uw.add_argument("input", help="CSV of ts_ns,value")
+    p_uw.add_argument("--returns", action="store_true",
+                      help="the file holds simple returns rather than an "
+                           "equity curve; compound them first")
+    p_uw.add_argument("--horizon", type=int, nargs="+", default=None,
+                      metavar="N",
+                      help="also resample the worst drawdown over these "
+                           "horizons, to show how a maximum grows with the "
+                           "length of the sample (needs --returns)")
+    p_uw.add_argument("--paths", type=int, default=1000, metavar="K",
+                      help="paths per horizon (default 1000)")
+    p_uw.add_argument("--seed", type=int, default=0, metavar="S",
+                      help="seed for the resampling, so the result "
+                           "reproduces (default 0)")
+    p_uw.add_argument("--ts-field", default="ts_ns", metavar="NAME")
+    p_uw.add_argument("--value-field", default="value", metavar="NAME")
+    p_uw.set_defaults(func=_cmd_underwater)
 
 
     p_rc = sub.add_parser("reconcile",

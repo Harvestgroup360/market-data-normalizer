@@ -331,6 +331,19 @@ from .compounding import (
     to_simple,
     variance_drag,
 )
+from .underwater import (
+    ResampledDrawdowns,
+    UnderwaterReport,
+    depth_quantile,
+    longest_underwater,
+    pain_index,
+    resampled_max_drawdown,
+    time_under_water,
+    ulcer_index,
+    underwater_curve,
+    underwater_report,
+    underwater_share,
+)
 from .serial import (
     ScalingFactor,
     SerialReport,
@@ -398,7 +411,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.42.0"
+__version__ = "1.43.0"
 
 __all__ = [
     "MarketEvent",
@@ -730,6 +743,17 @@ __all__ = [
     "long_run_variance",
     "variance_ratio",
     "serial_report",
+    "UnderwaterReport",
+    "ResampledDrawdowns",
+    "underwater_curve",
+    "time_under_water",
+    "underwater_share",
+    "longest_underwater",
+    "pain_index",
+    "ulcer_index",
+    "depth_quantile",
+    "resampled_max_drawdown",
+    "underwater_report",
     "Digest",
     "InputRef",
     "Manifest",

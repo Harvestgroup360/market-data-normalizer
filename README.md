@@ -1862,6 +1862,72 @@ runs in the direction that makes a dependent series look clean.
 $ mdnorm serial monthly.csv --periods 12 --max-lag 11 --show 4 --hac 11
 ```
 
+### A maximum drawdown is a maximum
+
+The drawdown figure on a tear sheet is the worst single observation in the
+sample. That makes it an order statistic, and order statistics grow with how
+long you look: run the same unchanged strategy for ten years instead of two
+and its worst decline gets deeper, because there were more chances for a bad
+run to happen. Two backtests of different lengths are not reporting the same
+quantity.
+
+```python
+from mdnorm import underwater_report, resampled_max_drawdown
+
+rep = underwater_report(equity)
+
+rep.deepest              # 0.208839 — the number that gets published
+rep.ulcer                # 0.088358 — reads every observation, not one
+rep.pain                 # 0.071522
+rep.concentration        # 0.423089 — ulcer over deepest
+rep.underwater_share     # 0.9294 — 93% of the sample below a prior peak
+rep.longest_underwater   # 281 observations without a new high
+rep.open_at_end          # True — the sample ends in a decline
+```
+
+**The headline rests on one observation and the alternatives do not.**
+`ulcer_index` is the root mean square depth over the whole curve and
+`pain_index` is its mean. Neither can be moved by a single day. Their ratio to
+the maximum says which kind of strategy you have: a concentration near one
+means the curve spent the sample close to its worst, near zero means the
+maximum was a single excursion the rest of the sample knows nothing about.
+
+**Depth is not the part anyone lives through.** Down eight per cent for three
+weeks and down eight per cent for three years report the same drawdown. On the
+series above the maximum is 20.9 per cent and the strategy spent 93 per cent
+of five years below a previous high, with one stretch of 281 trading days
+without a new one. That second fact is usually absent from the report.
+
+**A decline still open at the end is not a recovered one.** Nothing here
+closes an open drawdown at the final observation, because that turns "we do
+not know yet" into "it ended here".
+
+**The length effect, measured rather than assumed.** `resampled_max_drawdown`
+draws from your own returns to ask what the worst decline looks like over a
+horizon you name:
+
+| Horizon | Median worst drawdown | 90th percentile |
+| --- | --- | --- |
+| 1 year | 0.1344 | 0.2166 |
+| 5 years | 0.2392 | 0.3732 |
+| 10 years | 0.2982 | 0.4271 |
+
+Same returns, same process, no change in risk. A two-year backtest reporting
+13 per cent and a ten-year one reporting 30 per cent can describe the same
+strategy.
+
+**The resampling assumption is stated, and it flatters.** Drawing with
+replacement destroys serial correlation, and losses that arrive in runs make
+drawdowns deeper than independent losses do. On a positively autocorrelated
+series — which is what [the previous section](#the-square-root-of-time-is-a-claim-about-independence)
+measures — the resampled distribution therefore sits shallower than the truth.
+It is a lower bound, not an estimate. No default horizon, path count or seed:
+the caller states all three.
+
+```console
+$ mdnorm underwater pnl.csv --returns --horizon 252 1260 2520 --paths 1000 --seed 7
+```
+
 ### How much of the result is the search
 
 Everything above is about getting the data right. The last step is a correct

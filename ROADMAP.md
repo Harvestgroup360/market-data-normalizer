@@ -11,9 +11,9 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Fifty-four tagged releases, forty-one of them published to PyPI (the
+Fifty-five tagged releases, forty-two of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 1648 tests, and a type checker that passes clean.
+dependencies, Python 3.10+, 1683 tests, and a type checker that passes clean.
 
 | Layer | Modules |
 | --- | --- |
@@ -24,13 +24,13 @@ dependencies, Python 3.10+, 1648 tests, and a type checker that passes clean.
 | Microstructure | `book`, `consolidate`, `micro` |
 | Execution | `execution` |
 | Research | `align`, `arrival`, `features`, `labels`, `revisions`, `mixfreq`, `seasonality` |
-| Evaluation | `metrics`, `costs`, `compounding`, `serial`, `independence`, `breadth`, `exposure`, `extremes`, `windows`, `multiverse` |
+| Evaluation | `metrics`, `costs`, `compounding`, `serial`, `underwater`, `independence`, `breadth`, `exposure`, `extremes`, `windows`, `multiverse` |
 | Reproducibility | `provenance` |
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
 Shipped since the last revision of this file: `mixfreq`, `membership`,
 `reconcile`, `calendars`, `fx`, `ticksize`, `arrival`, `seasonality`, `resolution`, `auctions`, `independence`, `staleness`, `halts`, `coverage`, `provenance`, `extremes`, `windows`,
-`multiverse`, `breadth`, `exposure`, `compounding` and `serial`. The first two were the items that stood under
+`multiverse`, `breadth`, `exposure`, `compounding`, `serial` and `underwater`. The first two were the items that stood under
 *Under consideration* below; the other four were not on the list. `reconcile` is
 here because comparing two sources of the same series is the check people run
 before trusting either, and nothing in the library did it. A slow series now carries the
@@ -68,7 +68,32 @@ it is conservative and still wrong, and estimating the effective count would
 need a model of how the decisions correlate. We do not have one, so we say so
 instead of shipping a number that looks like we do.
 
-`serial` is the newest, and it closes a gap the library had been walking past.
+`underwater` is the newest, and it is the smallest idea in the library stated
+carefully. A maximum drawdown is a maximum. It is the worst single observation
+in a sample, which makes it an order statistic, and order statistics grow with
+how long you look. The same unchanged returns give a median worst decline of
+0.1344 over a year and 0.2982 over ten; a two-year backtest and a ten-year one
+are not reporting the same quantity, and neither of them says so.
+
+What the module adds beside it is the part people actually live through. The
+README strategy has a maximum drawdown of 20.9 per cent, which sounds
+survivable, and spent 92.94 per cent of five years below a previous high with
+one stretch of 281 trading days without a new one. Depth and duration are
+different questions and only one of them is usually asked. The ulcer and pain
+indices are there for the same reason: they read every observation, so no
+single day can set them, and their ratio to the maximum says whether a curve
+sat near its worst or dipped once.
+
+`resampled_max_drawdown` ships with its assumption on the outside. It draws
+with replacement, which destroys serial correlation, and losses that arrive in
+runs make drawdowns deeper than independent losses do. On a positively
+autocorrelated series it is therefore a lower bound on the drawdown rather
+than an estimate of it — the flattering direction — and `serial` from the
+previous release is how a caller finds out whether that describes their data.
+The CLI note says so where someone reading output will see it, not only in the
+docstring.
+
+`serial` closes a gap the library had been walking past.
 Every other module here is careful about the numbers going in; this one is
 about the last multiplication on the way out. Annualising a Sharpe ratio by
 the square root of the calendar is correct only for independent returns, and
