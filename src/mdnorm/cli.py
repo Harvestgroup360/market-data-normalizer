@@ -2902,6 +2902,79 @@ def _cmd_underwater(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_hurdle(args: argparse.Namespace) -> int:
+    """The same Sharpe ratio against no hurdle, a constant one and a series."""
+    from .hurdle import active_report, excess_report, hurdle_comparison
+
+    def load(path: str) -> List[Decimal]:
+        rows = read_samples_csv(path, ts_column=args.ts_field,
+                                value_column=args.value_field)
+        return [r.value for r in rows]
+
+    try:
+        returns = load(args.input)
+        rates = load(args.rates)
+        bench = load(args.benchmark) if args.benchmark else None
+    except (KeyError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    def line(label: str, value: str) -> None:
+        print(f"{label:<28} {value}", file=sys.stderr)
+
+    def show(value: Optional[Decimal], places: str = ".6f") -> str:
+        return "n/a" if value is None else format(value, places)
+
+    try:
+        cmp = hurdle_comparison(returns, rates, ddof=args.ddof)
+        rep = excess_report(returns, rates, ddof=args.ddof)
+    except (ValueError, ArithmeticError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    line("observations", str(cmp.observations))
+    line("mean return", show(rep.mean_return, ".8f"))
+    line("mean rate", show(rep.mean_rate, ".8f"))
+    line("mean excess", show(rep.mean_excess, ".8f"))
+    line("hurdle share of the gross", show(rep.share_credited_to_cash))
+    print("per-period Sharpe ratio under three hurdles", file=sys.stderr)
+    line("  none at all", show(cmp.sharpe_raw))
+    line("  the mean rate, once", show(cmp.sharpe_constant))
+    line("  the rate series", show(cmp.sharpe_series))
+    line("gap, none vs series", show(cmp.zero_hurdle_gap))
+    line("gap, constant vs series", show(cmp.constant_series_gap))
+    line("rate volatility", show(cmp.rate_volatility, ".8f"))
+    line("rate/return correlation", show(cmp.rate_correlation))
+
+    print("note: none of these is annualised. Use "
+          "mdnorm.metrics.annualise_sharpe, and read `mdnorm serial` first "
+          "if the series is smoothed.", file=sys.stderr)
+    print("note: the gap against no hurdle has a direction — a non-negative "
+          "rate can only make that figure the larger one. The gap between a "
+          "constant rate and the series does not: its sign follows the "
+          "correlation above and the rate's own variance, both properties of "
+          "this sample.", file=sys.stderr)
+    if not rep.rate_moved:
+        print("note: the rate never moved over this sample, so a constant "
+              "and the series are the same hurdle here.", file=sys.stderr)
+
+    if bench is not None:
+        try:
+            act = active_report(returns, bench, ddof=args.ddof)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        print("against the benchmark supplied", file=sys.stderr)
+        line("  mean benchmark", show(act.mean_benchmark, ".8f"))
+        line("  mean active", show(act.mean_active, ".8f"))
+        line("  tracking error", show(act.tracking_error, ".8f"))
+        line("  information ratio", show(act.information_ratio))
+        print("note: an information ratio is a statement about the strategy "
+              "and about the benchmark. Both means are printed above so the "
+              "second one stays visible.", file=sys.stderr)
+    return 0
+
+
 def _cmd_reconcile(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -3954,6 +4027,27 @@ def build_parser() -> argparse.ArgumentParser:
     p_uw.add_argument("--ts-field", default="ts_ns", metavar="NAME")
     p_uw.add_argument("--value-field", default="value", metavar="NAME")
     p_uw.set_defaults(func=_cmd_underwater)
+
+
+    p_hu = sub.add_parser("hurdle",
+                          help="what the return is measured against: a rate "
+                               "series rather than zero or one constant")
+    p_hu.add_argument("input", help="CSV of ts_ns,value — per-period returns")
+    p_hu.add_argument("--rates", required=True, metavar="FILE",
+                      help="CSV of ts_ns,value — the per-period rate faced "
+                           "in each period. Required: there is no default "
+                           "cash curve here, for the same reason there is no "
+                           "default annualisation factor")
+    p_hu.add_argument("--benchmark", default=None, metavar="FILE",
+                      help="CSV of ts_ns,value — also report active return, "
+                           "tracking error and information ratio against "
+                           "this series")
+    p_hu.add_argument("--ddof", type=int, default=1, metavar="N",
+                      help="delta degrees of freedom for every standard "
+                           "deviation here (default 1)")
+    p_hu.add_argument("--ts-field", default="ts_ns", metavar="NAME")
+    p_hu.add_argument("--value-field", default="value", metavar="NAME")
+    p_hu.set_defaults(func=_cmd_hurdle)
 
 
     p_rc = sub.add_parser("reconcile",

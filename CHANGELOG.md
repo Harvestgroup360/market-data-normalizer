@@ -3,6 +3,54 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.44.0] - 2026-09-18
+
+### Added
+- `hurdle`: what a return is measured against, when the thing it is measured
+  against moves. Every ratio in the library takes a hurdle and it is usually
+  left at zero or set to one constant for the whole sample. On twenty years of
+  a cash-plus book the per-period Sharpe ratio is 0.486326 against nothing,
+  0.260610 against the mean rate and 0.257868 against the rate actually paid —
+  1.6847, 0.9028 and 0.8933 annualised. Forty-six per cent of the gross return
+  was the hurdle.
+- **Subtracting a constant and subtracting a series are different
+  operations.** The first moves the mean and leaves the volatility alone; the
+  second changes both, because a moving rate has a variance and a covariance
+  with the returns. `HurdleComparison.constant_series_gap` reports the
+  difference and deliberately does not name a direction: its sign follows
+  `rate_correlation` and the rate's own variance, both properties of the
+  sample. The test suite carries one sample of each sign. The gap against *no*
+  hurdle does have a direction — a non-negative rate can only make that figure
+  the larger — and is reported separately as `zero_hurdle_gap` for that reason.
+- `per_period_rate` converts a quoted annual rate either by dividing or by
+  compounding and requires the caller to say which. Five per cent over 252
+  periods is 0.000198413 one way and 0.000193631 the other; small per period,
+  one direction for the whole sample, and it lands on the hurdle rather than
+  on the return.
+- `rebase` moves a rate between day-count bases. Money-market quotes are on a
+  360-day year, and using one against a 365-day calendar understates the
+  hurdle by 365/360 — 1.39 per cent of the rate, every period, on the
+  flattering side. Neither basis is inferred from the value.
+- `active_returns`, `tracking_error` and `information_ratio` treat a benchmark
+  as the hurdle it is. `ActiveReport` carries both means, because an
+  information ratio is a statement about the strategy and about the benchmark,
+  and `ddof` is required rather than defaulted on samples this short.
+- A perfect tracker reports no information ratio rather than an infinite one,
+  and `share_credited_to_cash` is `None` on a losing book rather than a
+  negative share.
+- Refusals over plausible answers. Series of different lengths are refused
+  with both counts named and a pointer at `mdnorm.align`, rather than
+  truncated to the shorter one. Compounding a quote at or below -100 per cent
+  raises and names `compound=False` as the alternative.
+- `mdnorm hurdle` on the command line, with `--rates` required: there is no
+  default cash curve here, for the same reason there is no default
+  annualisation factor. It prints the direction rule beside the numbers.
+
+### Note
+- No rate data ships with this module, and none will, for the same reason no
+  factor data ships with `exposure`: bundling one would make every answer
+  partly a property of whose curve we chose.
+
 ## [1.43.0] - 2026-09-17
 
 ### Added

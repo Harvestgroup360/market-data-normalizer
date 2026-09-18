@@ -1928,6 +1928,84 @@ the caller states all three.
 $ mdnorm underwater pnl.csv --returns --horizon 252 1260 2520 --paths 1000 --seed 7
 ```
 
+### A return has to beat something
+
+Every ratio above measures a return against a hurdle, and the hurdle is
+usually left at zero or set to one constant for the whole sample. Cash paid
+close to nothing for a decade and then five per cent, so the first choice
+credits a strategy with the cash return and the second one misdates it.
+
+The series below is twenty years of a cash-plus book — the kind that holds
+collateral, so its gross return mechanically contains the rate it was financed
+at. Monthly returns are `rate + gauss(0.0025, 0.0085)` from
+`random.Random(20260918)`, against a rate path that sits at 0.5 per cent for
+eleven years, rises to 5 per cent over twenty months, holds, then eases.
+
+```python
+from mdnorm import hurdle_comparison, excess_report
+
+cmp = hurdle_comparison(returns, rates, ddof=1)
+
+cmp.sharpe_raw         # 0.486326 — no hurdle at all
+cmp.sharpe_constant    # 0.260610 — the mean rate, subtracted once
+cmp.sharpe_series      # 0.257868 — the rate actually paid, period by period
+cmp.zero_hurdle_gap    # 0.228458
+cmp.rate_correlation   # 0.051507
+
+excess_report(returns, rates, ddof=1).share_credited_to_cash   # 0.464125
+```
+
+Annualised at twelve periods, those are the numbers a reader would see:
+
+| Hurdle | Annualised Sharpe |
+| --- | --- |
+| None | 1.6847 |
+| The mean rate, subtracted once | 0.9028 |
+| The rate series, period by period | 0.8933 |
+
+A book that presents as 1.68 is 0.89 once it is charged the cash it was
+financed at, and 46 per cent of its gross return was the hurdle. Nothing in
+the return series is wrong; the top row is answering a different question from
+the bottom one.
+
+**Not subtracting anything has a direction, and it is the flattering one.** A
+non-negative rate can only make the raw figure the larger, so `zero_hurdle_gap`
+is reported as a gap with a known sign.
+
+**Subtracting a constant and subtracting a series are different operations.**
+The first moves the mean and leaves the volatility alone; the second changes
+both, because a moving rate has a variance of its own and a covariance with
+the returns. `constant_series_gap` is 0.002742 here — the constant reads
+*higher* — and the module refuses to promise that sign, because it follows the
+correlation and the rate's variance in the sample rather than any general
+argument. On a series that is mostly the rate, it flips.
+
+**A quoted rate is an annual number and returns are not.** Five per cent over
+252 periods is 0.000198413 divided and 0.000193631 compounded. The gap is
+small per period, runs one way for the whole sample, and lands on the hurdle.
+`per_period_rate` does both and makes you name which; there is no default,
+for the same reason there is no default annualisation factor.
+
+**Day-count bases are not interchangeable.** SOFR, EURIBOR and most deposit
+quotes are on a 360-day year. Used against a 365-day calendar the same quote
+understates the hurdle by 365/360 — 1.39 per cent of the rate, every period,
+on the flattering side. `rebase` converts and refuses to guess which basis a
+number arrived on.
+
+**A benchmark is a hurdle too, and a worse-behaved one.** `active_returns`,
+`tracking_error` and `information_ratio` measure against a series somebody
+chose. Both means are reported, because an information ratio is a statement
+about the strategy *and* about the benchmark, and a tracking error computed
+with `ddof=0` on a two-year sample is not the one computed with `ddof=1`.
+
+No cash curve ships here, for the same reason no factor data ships with
+`exposure`: bundling one would make every answer partly a property of whose
+curve we picked.
+
+```console
+$ mdnorm hurdle pnl.csv --rates cash.csv --benchmark index.csv
+```
+
 ### How much of the result is the search
 
 Everything above is about getting the data right. The last step is a correct

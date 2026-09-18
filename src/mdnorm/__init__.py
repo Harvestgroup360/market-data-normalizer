@@ -344,6 +344,24 @@ from .underwater import (
     underwater_report,
     underwater_share,
 )
+from .hurdle import (
+    ACT_360,
+    ACT_365,
+    THIRTY_360,
+    ActiveReport,
+    DayCount,
+    ExcessReport,
+    HurdleComparison,
+    active_report,
+    active_returns,
+    excess_report,
+    excess_returns,
+    hurdle_comparison,
+    information_ratio,
+    per_period_rate,
+    rebase,
+    tracking_error,
+)
 from .serial import (
     ScalingFactor,
     SerialReport,
@@ -411,7 +429,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.43.0"
+__version__ = "1.44.0"
 
 __all__ = [
     "MarketEvent",
@@ -754,6 +772,22 @@ __all__ = [
     "depth_quantile",
     "resampled_max_drawdown",
     "underwater_report",
+    "DayCount",
+    "ACT_360",
+    "ACT_365",
+    "THIRTY_360",
+    "ExcessReport",
+    "ActiveReport",
+    "HurdleComparison",
+    "per_period_rate",
+    "rebase",
+    "excess_returns",
+    "active_returns",
+    "tracking_error",
+    "information_ratio",
+    "excess_report",
+    "active_report",
+    "hurdle_comparison",
     "Digest",
     "InputRef",
     "Manifest",

@@ -11,9 +11,9 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Fifty-five tagged releases, forty-two of them published to PyPI (the
+Fifty-six tagged releases, forty-three of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 1683 tests, and a type checker that passes clean.
+dependencies, Python 3.10+, 1720 tests, and a type checker that passes clean.
 
 | Layer | Modules |
 | --- | --- |
@@ -24,13 +24,13 @@ dependencies, Python 3.10+, 1683 tests, and a type checker that passes clean.
 | Microstructure | `book`, `consolidate`, `micro` |
 | Execution | `execution` |
 | Research | `align`, `arrival`, `features`, `labels`, `revisions`, `mixfreq`, `seasonality` |
-| Evaluation | `metrics`, `costs`, `compounding`, `serial`, `underwater`, `independence`, `breadth`, `exposure`, `extremes`, `windows`, `multiverse` |
+| Evaluation | `metrics`, `costs`, `compounding`, `serial`, `underwater`, `hurdle`, `independence`, `breadth`, `exposure`, `extremes`, `windows`, `multiverse` |
 | Reproducibility | `provenance` |
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
 Shipped since the last revision of this file: `mixfreq`, `membership`,
 `reconcile`, `calendars`, `fx`, `ticksize`, `arrival`, `seasonality`, `resolution`, `auctions`, `independence`, `staleness`, `halts`, `coverage`, `provenance`, `extremes`, `windows`,
-`multiverse`, `breadth`, `exposure`, `compounding`, `serial` and `underwater`. The first two were the items that stood under
+`multiverse`, `breadth`, `exposure`, `compounding`, `serial`, `underwater` and `hurdle`. The first two were the items that stood under
 *Under consideration* below; the other four were not on the list. `reconcile` is
 here because comparing two sources of the same series is the check people run
 before trusting either, and nothing in the library did it. A slow series now carries the
@@ -68,7 +68,31 @@ it is conservative and still wrong, and estimating the effective count would
 need a model of how the decisions correlate. We do not have one, so we say so
 instead of shipping a number that looks like we do.
 
-`underwater` is the newest, and it is the smallest idea in the library stated
+`hurdle` is the newest, and it is about the other side of every ratio in the
+library. A Sharpe ratio measures a return against something, and that
+something is usually zero or one constant for the whole sample. Cash paid
+close to nothing for a decade and then five per cent, so the first choice
+credits a strategy with the cash return and the second one misdates it. On
+twenty years of a cash-plus book the per-period Sharpe ratio is 0.486326
+against nothing and 0.257868 against the rate actually paid — 1.6847 and
+0.8933 annualised — and forty-six per cent of the gross return was the hurdle.
+
+Two of its decisions follow the pattern the last three releases set. The gap
+against no hurdle is reported with a direction, because a non-negative rate
+can only make that figure larger; the gap between a constant rate and the rate
+series is reported without one, because its sign follows the correlation and
+the rate's own variance in the sample. The test suite carries a sample of each
+sign rather than a sentence claiming both are possible.
+
+The other is that the module converts a quoted rate but will not choose the
+convention. Five per cent over 252 periods is 0.000198413 divided and
+0.000193631 compounded, and a money-market quote on a 360-day year used
+against a 365-day calendar understates the hurdle by 1.39 per cent of itself.
+Both are small per period, both run one way for the whole sample, and both
+land on the hurdle rather than on the return. No cash curve ships here, for
+the same reason no factor data ships with `exposure`.
+
+`underwater` is the smallest idea in the library stated
 carefully. A maximum drawdown is a maximum. It is the worst single observation
 in a sample, which makes it an order statistic, and order statistics grow with
 how long you look. The same unchanged returns give a median worst decline of
