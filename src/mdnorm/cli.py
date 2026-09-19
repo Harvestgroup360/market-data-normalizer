@@ -2975,6 +2975,106 @@ def _cmd_hurdle(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_rebalance(args: argparse.Namespace) -> int:
+    """How often a backtest trades, and what that assumption is worth."""
+    import csv as _csv
+
+    from .rebalance import (band_rebalance, buy_and_hold, compare_schedules,
+                            drift_report, periodic_rebalance)
+
+    rows: List[dict] = []
+    names: List[str] = []
+    try:
+        with open_text(args.input) as fh:
+            reader = _csv.DictReader(fh)
+            if reader.fieldnames is None:
+                print("error: the file has no header row", file=sys.stderr)
+                return 1
+            names = [c for c in reader.fieldnames if c != args.ts_field]
+            if not names:
+                print(f"error: no instrument columns beside {args.ts_field}",
+                      file=sys.stderr)
+                return 1
+            for row in reader:
+                rows.append({k: Decimal(row[k].strip()) for k in names})
+    except (KeyError, ValueError, ArithmeticError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if not rows:
+        print("error: the file has no rows", file=sys.stderr)
+        return 1
+
+    if args.weights:
+        target = {}
+        for pair in args.weights.split(","):
+            if "=" not in pair:
+                print(f"error: expected name=weight, got {pair!r}",
+                      file=sys.stderr)
+                return 1
+            k, _, v = pair.partition("=")
+            target[k.strip()] = Decimal(v.strip())
+    else:
+        target = {k: Decimal(1) / Decimal(len(names)) for k in names}
+
+    schedules = {}
+    try:
+        for every in args.every or []:
+            schedules[f"every {every}"] = periodic_rebalance(
+                target, rows, every=every, one_sided=not args.two_sided)
+        for band in args.band or []:
+            schedules[f"band {band}"] = band_rebalance(
+                target, rows, band=Decimal(str(band)),
+                one_sided=not args.two_sided)
+        if args.hold or not schedules:
+            schedules["never"] = buy_and_hold(target, rows)
+    except (ValueError, ArithmeticError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    side = "two-sided" if args.two_sided else "one-sided"
+    print(f"{len(rows)} periods, {len(names)} instruments, "
+          f"{side} turnover", file=sys.stderr)
+    print(f"{'schedule':<14}{'return':>12}{'turnover':>12}{'rebalances':>12}",
+          file=sys.stderr)
+    for label, res in schedules.items():
+        print(f"{label:<14}{res.total_return:>11.6f} {res.total_turnover:>11.6f} "
+              f"{res.rebalances:>11d}", file=sys.stderr)
+
+    cmp = compare_schedules(schedules)
+    print(f"most active: {cmp.most_active.label}   "
+          f"least active: {cmp.least_active.label}", file=sys.stderr)
+    be = cmp.breakeven_cost_bps
+    if be is None:
+        print("breakeven cost: n/a — those two traded the same amount",
+              file=sys.stderr)
+    else:
+        print(f"breakeven cost: {be:.4f} bps per unit of turnover",
+              file=sys.stderr)
+        if be < 0:
+            print("note: negative. The more active schedule earned less "
+                  "before any cost was charged, so there is no cost level "
+                  "at which it wins.", file=sys.stderr)
+        else:
+            print("note: charge more than this per unit of turnover and the "
+                  "ranking between the most and least active schedules "
+                  "reverses. mdnorm.costs prices the trade; nothing is "
+                  "charged here.", file=sys.stderr)
+
+    if args.drift_band is not None:
+        band = Decimal(str(args.drift_band))
+        print(f"drift against target, band {band}", file=sys.stderr)
+        for label, res in schedules.items():
+            rep = drift_report(target, res.weights, band=band)
+            print(f"  {label:<12} max {rep.max_drift:.6f}  "
+                  f"mean {rep.mean_abs_drift:.6f}  "
+                  f"outside {rep.share_outside_band * 100:.2f}%  "
+                  f"worst {rep.worst_name}", file=sys.stderr)
+
+    print("note: the frequency is an assumption. Nothing in the data differs "
+          "between these rows.", file=sys.stderr)
+    return 0
+
+
 def _cmd_reconcile(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -4048,6 +4148,39 @@ def build_parser() -> argparse.ArgumentParser:
     p_hu.add_argument("--ts-field", default="ts_ns", metavar="NAME")
     p_hu.add_argument("--value-field", default="value", metavar="NAME")
     p_hu.set_defaults(func=_cmd_hurdle)
+
+
+    p_rb = sub.add_parser("rebalance",
+                          help="what a rebalancing schedule earns and what "
+                               "it trades to earn it")
+    p_rb.add_argument("input",
+                      help="CSV with a timestamp column and one column of "
+                           "per-period returns per instrument")
+    p_rb.add_argument("--every", type=int, nargs="+", default=None,
+                      metavar="N",
+                      help="periodic schedules to run, in periods: "
+                           "--every 1 21 252")
+    p_rb.add_argument("--band", type=str, nargs="+", default=None,
+                      metavar="W",
+                      help="band schedules to run, in weight units: "
+                           "--band 0.02 0.05")
+    p_rb.add_argument("--hold", action="store_true",
+                      help="also run buy-and-hold (included automatically "
+                           "when no other schedule is given)")
+    p_rb.add_argument("--weights", default=None, metavar="SPEC",
+                      help="target weights as name=weight,name=weight. "
+                           "Default is equal weight across every instrument "
+                           "column in the file")
+    p_rb.add_argument("--two-sided", action="store_true",
+                      help="report turnover as the full sum of absolute "
+                           "weight changes rather than half of it; the two "
+                           "differ by a factor of two and both are printed "
+                           "under the same word in the wild")
+    p_rb.add_argument("--drift-band", type=str, default=None, metavar="W",
+                      help="also report how far each schedule let the "
+                           "weights wander, against this band")
+    p_rb.add_argument("--ts-field", default="ts_ns", metavar="NAME")
+    p_rb.set_defaults(func=_cmd_rebalance)
 
 
     p_rc = sub.add_parser("reconcile",

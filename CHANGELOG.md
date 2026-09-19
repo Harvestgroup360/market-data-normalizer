@@ -3,6 +3,48 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.45.0] - 2026-09-19
+
+### Added
+- `rebalance`: how often a backtest trades the book back to target, which is
+  an assumption nobody writes down. Five names over five years, equal weight,
+  identical returns throughout: rebalancing at every observation returns
+  11.7901% and needs 5.6217 of one-sided turnover; never rebalancing returns
+  11.3466% and needs none. The 44-basis-point advantage is gone at a cost of
+  7.8893 basis points per unit of turnover, and above that the ranking
+  reverses. `ScheduleComparison.breakeven_cost_bps` is that number.
+- **Turnover is monotone in the frequency and the return is not.** Across
+  every 1, 5, 21, 63 and 252 periods the returns run 11.7901, 11.3488,
+  10.1833, 11.3573 and 10.9495 per cent — no ordering, because the
+  differences are noise and the trading is not. The module reports both
+  columns and recommends nothing.
+- `band_rebalance` trades on drift rather than on the calendar, and on this
+  sample holds the book tighter for less: a 2-percentage-point band caps the
+  worst drift at 0.0199 with 0.9783 of turnover, where rebalancing every five
+  periods allows 0.0213 and spends 2.4133. A calendar does not know whether
+  anything has moved.
+- `drift_once`, `drift_path` and `drift_report` describe what an untouched
+  book becomes. On the worked example buy-and-hold spends 97.70% of five years
+  with some name more than two percentage points from its target and reaches
+  0.1523 at the worst.
+- `turnover_between` requires `one_sided` rather than defaulting it. The
+  one-sided and two-sided conventions differ by a factor of two and both are
+  printed under the same word in the wild; the one-sided branch agrees with
+  `mdnorm.metrics.turnover` on the same weight path, which the suite checks.
+- Refusals over filled gaps, as elsewhere. A period missing a return for a
+  held name is refused with the period and the name in the message, because a
+  name that did not trade and a name that was flat produce the same weight and
+  mean different things. A period that takes equity to zero or below raises
+  instead of returning weights.
+- `mdnorm rebalance` on the command line, with a drift table and the breakeven
+  cost printed beside the schedules.
+
+### Note
+- Nothing is charged here. `costs` prices a trade and this module says how
+  much trading a rule implies; keeping them apart means the cost model stays
+  something the caller states. The residual weight is carried as cash at a
+  zero return, which `hurdle` is where to price.
+
 ## [1.44.0] - 2026-09-18
 
 ### Added

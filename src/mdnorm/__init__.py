@@ -344,6 +344,19 @@ from .underwater import (
     underwater_report,
     underwater_share,
 )
+from .rebalance import (
+    DriftReport,
+    ScheduleComparison,
+    ScheduleResult,
+    band_rebalance,
+    buy_and_hold,
+    compare_schedules,
+    drift_once,
+    drift_path,
+    drift_report,
+    periodic_rebalance,
+    turnover_between,
+)
 from .hurdle import (
     ACT_360,
     ACT_365,
@@ -429,7 +442,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.44.0"
+__version__ = "1.45.0"
 
 __all__ = [
     "MarketEvent",
@@ -788,6 +801,17 @@ __all__ = [
     "excess_report",
     "active_report",
     "hurdle_comparison",
+    "DriftReport",
+    "ScheduleResult",
+    "ScheduleComparison",
+    "drift_once",
+    "drift_path",
+    "turnover_between",
+    "periodic_rebalance",
+    "band_rebalance",
+    "buy_and_hold",
+    "drift_report",
+    "compare_schedules",
     "Digest",
     "InputRef",
     "Manifest",

@@ -2006,6 +2006,74 @@ curve we picked.
 $ mdnorm hurdle pnl.csv --rates cash.csv --benchmark index.csv
 ```
 
+### How often the book is traded back is an assumption
+
+A weight vector is a decision made once. What happens to it afterwards is
+arithmetic: winners grow, losers shrink, and by the end of a month an
+equal-weight book is not equal-weight any more. Most backtests quietly snap the
+weights back to target at every observation, which earns a return nobody could
+have had without trading, and then report no turnover at all.
+
+Five names over five years, equal weight, one of them markedly more volatile
+than the rest. Returns are `gauss` draws from `random.Random(20260919)` with
+the per-name parameters in the test file. Nothing differs between these rows
+except how often the book was assumed to be traded back:
+
+| Schedule | Total return | One-sided turnover | Rebalances | Max drift |
+| --- | --- | --- | --- | --- |
+| Every period | 11.7901% | 5.6217 | 1259 | 0.0000 |
+| Every 5 | 11.3488% | 2.4133 | 251 | 0.0213 |
+| Every 21 | 10.1833% | 1.0955 | 59 | 0.0376 |
+| Every 63 | 11.3573% | 0.6863 | 19 | 0.0726 |
+| Every 252 | 10.9495% | 0.2868 | 4 | 0.1156 |
+| Band, 2pp | 10.8574% | 0.9783 | 39 | 0.0199 |
+| Never | 11.3466% | 0.0000 | 0 | 0.1523 |
+
+```python
+from mdnorm import periodic_rebalance, buy_and_hold, compare_schedules
+
+cmp = compare_schedules({
+    "every 1": periodic_rebalance(target, returns, every=1),
+    "never": buy_and_hold(target, returns),
+})
+
+cmp.return_spread        # 0.00443514 — 44 basis points over five years
+cmp.breakeven_cost_bps   # 7.8893
+```
+
+**The daily advantage is inside the cost of getting it.** Rebalancing at every
+observation beats never rebalancing by 44 basis points and turns the book 5.6
+times to do it. At 7.89 basis points per unit of one-sided turnover the
+advantage is exactly gone, and above it the ranking reverses. That figure is
+what `breakeven_cost_bps` reports: not a recommendation, the cost level at
+which the argument changes sides.
+
+**Turnover is monotone in the frequency and the return is not.** Read the
+table again: 63 periods beats 5, which beats 252, which beats 21. There is no
+ordering to find, because the differences are noise and the trading is not.
+This is why the module reports both columns and recommends nothing.
+
+**A band rule holds the book tighter than a calendar rule and trades less.**
+The 2-percentage-point band keeps the worst drift at 0.0199 with 0.98 of
+turnover; rebalancing every five periods allows 0.0213 and spends 2.41. A
+calendar does not know whether anything has moved, and most of the time
+nothing has.
+
+**No costs are charged here.** [`costs`](#what-the-trade-costs) prices a trade;
+this module says how much trading a rule implies. Keeping them apart means the
+cost model stays something you state rather than something a schedule smuggled
+in. The residual weight is cash at a zero return, which is an assumption —
+[`hurdle`](#a-return-has-to-beat-something) is where it gets priced.
+
+There is no default schedule, no default band and no default turnover
+convention. One-sided and two-sided turnover differ by a factor of two and
+both appear in print under the same word, so `turnover_between` makes you name
+which.
+
+```console
+$ mdnorm rebalance panel.csv --every 1 21 252 --band 0.02 --hold --drift-band 0.02
+```
+
 ### How much of the result is the search
 
 Everything above is about getting the data right. The last step is a correct

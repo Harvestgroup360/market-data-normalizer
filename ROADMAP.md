@@ -11,9 +11,9 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Fifty-six tagged releases, forty-three of them published to PyPI (the
+Fifty-seven tagged releases, forty-four of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 1720 tests, and a type checker that passes clean.
+dependencies, Python 3.10+, 1759 tests, and a type checker that passes clean.
 
 | Layer | Modules |
 | --- | --- |
@@ -24,13 +24,13 @@ dependencies, Python 3.10+, 1720 tests, and a type checker that passes clean.
 | Microstructure | `book`, `consolidate`, `micro` |
 | Execution | `execution` |
 | Research | `align`, `arrival`, `features`, `labels`, `revisions`, `mixfreq`, `seasonality` |
-| Evaluation | `metrics`, `costs`, `compounding`, `serial`, `underwater`, `hurdle`, `independence`, `breadth`, `exposure`, `extremes`, `windows`, `multiverse` |
+| Evaluation | `metrics`, `costs`, `compounding`, `serial`, `underwater`, `hurdle`, `rebalance`, `independence`, `breadth`, `exposure`, `extremes`, `windows`, `multiverse` |
 | Reproducibility | `provenance` |
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
 Shipped since the last revision of this file: `mixfreq`, `membership`,
 `reconcile`, `calendars`, `fx`, `ticksize`, `arrival`, `seasonality`, `resolution`, `auctions`, `independence`, `staleness`, `halts`, `coverage`, `provenance`, `extremes`, `windows`,
-`multiverse`, `breadth`, `exposure`, `compounding`, `serial`, `underwater` and `hurdle`. The first two were the items that stood under
+`multiverse`, `breadth`, `exposure`, `compounding`, `serial`, `underwater`, `hurdle` and `rebalance`. The first two were the items that stood under
 *Under consideration* below; the other four were not on the list. `reconcile` is
 here because comparing two sources of the same series is the check people run
 before trusting either, and nothing in the library did it. A slow series now carries the
@@ -68,7 +68,35 @@ it is conservative and still wrong, and estimating the effective count would
 need a model of how the decisions correlate. We do not have one, so we say so
 instead of shipping a number that looks like we do.
 
-`hurdle` is the newest, and it is about the other side of every ratio in the
+`rebalance` is the newest, and it closes a gap that had been sitting in plain
+sight. Every evaluation module here reads a return series, and nothing said
+where the return series came from. A weight vector is a decision made once;
+what happens to it afterwards is arithmetic, and most backtests quietly snap
+the weights back to target at every observation. That earns a return nobody
+could have had without trading, and the trading is never reported.
+
+Five names over five years, equal weight, identical returns throughout:
+rebalancing every period returns 11.7901 per cent and needs 5.6217 of
+one-sided turnover, never rebalancing returns 11.3466 per cent and needs none.
+The forty-four basis points between them are gone at a cost of 7.8893 basis
+points per unit of turnover. `breakeven_cost_bps` reports that level rather
+than a recommendation, and its sign is kept when the more active schedule
+earned less, because a negative cost reads as a bargain when it is printed as
+a magnitude.
+
+The result worth putting on the record is that turnover is monotone in the
+frequency and the return is not. Across every 1, 5, 21, 63 and 252 periods the
+returns run 11.7901, 11.3488, 10.1833, 11.3573 and 10.9495 per cent. There is
+no ordering to find. The differences are noise, the trading is not, and a
+module that picked a frequency would be dressing the first up as the second.
+
+It charges nothing. `costs` prices a trade and this says how much trading a
+rule implies; that seam is deliberate, because a cost model that arrived
+attached to a schedule would stop being a thing the caller stated. The same
+applies to the residual weight, which is carried as cash at a zero return and
+pointed at `hurdle` rather than quietly credited with a rate.
+
+`hurdle` is about the other side of every ratio in the
 library. A Sharpe ratio measures a return against something, and that
 something is usually zero or one constant for the whole sample. Cash paid
 close to nothing for a decade and then five per cent, so the first choice
