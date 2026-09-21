@@ -3075,6 +3075,57 @@ def _cmd_rebalance(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_fees(args: argparse.Namespace) -> int:
+    """Gross returns taken through a fund fee schedule."""
+    from .fundfees import FeeSchedule, compare_fees
+
+    try:
+        rows = read_samples_csv(args.input, ts_column=args.ts_field,
+                                value_column=args.value_field)
+    except (KeyError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    gross = [r.value for r in rows]
+
+    everies = args.crystallise_every
+    schedules = {}
+    try:
+        for every in everies:
+            for hwm in ([True, False] if args.compare_hwm else
+                        [not args.no_hwm]):
+                label = f"every {every}, {'HWM' if hwm else 'no HWM'}"
+                schedules[label] = FeeSchedule(
+                    management=Decimal(args.management),
+                    incentive=Decimal(args.incentive),
+                    periods_per_year=args.periods_per_year,
+                    crystallise_every=every, high_water_mark=hwm)
+        cmp = compare_fees(gross, schedules)
+    except (ValueError, ArithmeticError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"{cmp.results[0].periods} periods, management {args.management} "
+          f"a year, incentive {args.incentive}", file=sys.stderr)
+    print(f"gross total return        {cmp.gross_total:.6f}", file=sys.stderr)
+    print(f"{'schedule':<24}{'net total':>12}{'share of profit':>18}"
+          f"{'charged':>10}", file=sys.stderr)
+    for label, res in zip(cmp.labels, cmp.results):
+        share = res.fee_share_of_profit
+        shown = "n/a" if share is None else f"{share:.6f}"
+        print(f"{label:<24}{res.net_total:>12.6f}{shown:>18}"
+              f"{res.charged:>5}/{res.crystallisations:<4}", file=sys.stderr)
+    if len(cmp.results) > 1:
+        print(f"net spread on identical gross returns: {cmp.net_spread:.6f}",
+              file=sys.stderr)
+    print("note: the share of profit is 1 - net/gross. It is the figure to "
+          "compare with the headline incentive rate, and it is usually well "
+          "above it.", file=sys.stderr)
+    print("note: the final observation always crystallises, as if the "
+          "investor redeemed there; an accrued fee is not left off.",
+          file=sys.stderr)
+    return 0
+
+
 def _cmd_reconcile(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -4181,6 +4232,31 @@ def build_parser() -> argparse.ArgumentParser:
                            "weights wander, against this band")
     p_rb.add_argument("--ts-field", default="ts_ns", metavar="NAME")
     p_rb.set_defaults(func=_cmd_rebalance)
+
+
+    p_fe = sub.add_parser("fees",
+                          help="what an investor keeps after a fund's "
+                               "management and incentive fees")
+    p_fe.add_argument("input", help="CSV of ts_ns,value — gross per-period returns")
+    p_fe.add_argument("--management", required=True, metavar="RATE",
+                      help="annual management fee, e.g. 0.02")
+    p_fe.add_argument("--incentive", required=True, metavar="SHARE",
+                      help="incentive fee share of qualifying gains, e.g. 0.20")
+    p_fe.add_argument("--periods-per-year", type=int, required=True,
+                      metavar="N", help="periods in a year for this series")
+    p_fe.add_argument("--crystallise-every", type=int, nargs="+",
+                      required=True, metavar="N",
+                      help="crystallisation interval in periods; give "
+                           "several to compare them on the same returns")
+    p_fe.add_argument("--no-hwm", action="store_true",
+                      help="measure each crystallisation against the "
+                           "previous one rather than a high-water mark")
+    p_fe.add_argument("--compare-hwm", action="store_true",
+                      help="run every interval with and without a "
+                           "high-water mark")
+    p_fe.add_argument("--ts-field", default="ts_ns", metavar="NAME")
+    p_fe.add_argument("--value-field", default="value", metavar="NAME")
+    p_fe.set_defaults(func=_cmd_fees)
 
 
     p_rc = sub.add_parser("reconcile",

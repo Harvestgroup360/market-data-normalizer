@@ -344,6 +344,13 @@ from .underwater import (
     underwater_report,
     underwater_share,
 )
+from .fundfees import (
+    FeeComparison,
+    FeeResult,
+    FeeSchedule,
+    apply_fees,
+    compare_fees,
+)
 from .rebalance import (
     DriftReport,
     ScheduleComparison,
@@ -442,7 +449,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.45.0"
+__version__ = "1.46.0"
 
 __all__ = [
     "MarketEvent",
@@ -812,6 +819,11 @@ __all__ = [
     "buy_and_hold",
     "drift_report",
     "compare_schedules",
+    "FeeSchedule",
+    "FeeResult",
+    "FeeComparison",
+    "apply_fees",
+    "compare_fees",
     "Digest",
     "InputRef",
     "Manifest",

@@ -11,9 +11,9 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Fifty-seven tagged releases, forty-four of them published to PyPI (the
+Fifty-eight tagged releases, forty-five of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 1759 tests, and a type checker that passes clean.
+dependencies, Python 3.10+, 1790 tests, and a type checker that passes clean.
 
 | Layer | Modules |
 | --- | --- |
@@ -24,13 +24,13 @@ dependencies, Python 3.10+, 1759 tests, and a type checker that passes clean.
 | Microstructure | `book`, `consolidate`, `micro` |
 | Execution | `execution` |
 | Research | `align`, `arrival`, `features`, `labels`, `revisions`, `mixfreq`, `seasonality` |
-| Evaluation | `metrics`, `costs`, `compounding`, `serial`, `underwater`, `hurdle`, `rebalance`, `independence`, `breadth`, `exposure`, `extremes`, `windows`, `multiverse` |
+| Evaluation | `metrics`, `costs`, `compounding`, `serial`, `underwater`, `hurdle`, `rebalance`, `fundfees`, `independence`, `breadth`, `exposure`, `extremes`, `windows`, `multiverse` |
 | Reproducibility | `provenance` |
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
 Shipped since the last revision of this file: `mixfreq`, `membership`,
 `reconcile`, `calendars`, `fx`, `ticksize`, `arrival`, `seasonality`, `resolution`, `auctions`, `independence`, `staleness`, `halts`, `coverage`, `provenance`, `extremes`, `windows`,
-`multiverse`, `breadth`, `exposure`, `compounding`, `serial`, `underwater`, `hurdle` and `rebalance`. The first two were the items that stood under
+`multiverse`, `breadth`, `exposure`, `compounding`, `serial`, `underwater`, `hurdle`, `rebalance` and `fundfees`. The first two were the items that stood under
 *Under consideration* below; the other four were not on the list. `reconcile` is
 here because comparing two sources of the same series is the check people run
 before trusting either, and nothing in the library did it. A slow series now carries the
@@ -68,7 +68,21 @@ it is conservative and still wrong, and estimating the effective count would
 need a model of how the decisions correlate. We do not have one, so we say so
 instead of shipping a number that looks like we do.
 
-`rebalance` is the newest, and it closes a gap that had been sitting in plain
+`fundfees` is the newest, and it is the last step between a backtest and a
+statement anyone could invest on. Everything else here is gross; an investor
+is paid net, and the fee is not a constant subtracted from the return. Ten
+years that earned 116.92 per cent leave 55.44 under two and twenty with annual
+crystallisation and a high-water mark, so more than half of the profit did not
+reach the investor. On the same returns, monthly crystallisation without a
+mark takes 83.29 per cent of it.
+
+The pattern is the one `rebalance` put on the record in the previous release: an
+unstated schedule decides the answer. There it was how often the book is
+traded back; here it is how often the fee is taken and whether losses are
+remembered. Neither appears in the name of the contract, which is why every
+field of the schedule is required and none is defaulted.
+
+`rebalance` closes a gap that had been sitting in plain
 sight. Every evaluation module here reads a return series, and nothing said
 where the return series came from. A weight vector is a decision made once;
 what happens to it afterwards is arithmetic, and most backtests quietly snap

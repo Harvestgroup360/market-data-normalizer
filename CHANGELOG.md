@@ -3,6 +3,47 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.46.0] - 2026-09-21
+
+### Added
+- `fundfees`: what an investor keeps after a fund's management and incentive
+  fees. Every other figure in the library is gross, which is right for
+  research and wrong for anyone deciding whether to invest. Ten years of
+  monthly returns totalling 116.92 per cent (about 8.05 a year) leave the
+  investor 55.44 per cent under two and twenty with annual crystallisation and
+  a high-water mark — 4.51 a year. `FeeResult.fee_share_of_profit` is 0.5259:
+  more than half of what the strategy earned did not reach the investor.
+- **The headline rate is not the share of profit.** A contract with no
+  management fee and a twenty per cent incentive took 28.48 per cent of the
+  profit on the same series, because a gain crystallised in one period is not
+  returned when a later one loses.
+- **Crystallisation frequency and the high-water mark are free parameters
+  that move the answer.** On identical gross returns, monthly crystallisation
+  without a mark took 83.29 per cent of the profit against 52.59 for annual
+  with one. `compare_fees` lines schedules up on one series so every
+  difference in the net column is the contract.
+- `FeeResult.sharpe(net=..., ddof=...)` reports both sides. The incentive fee
+  trims good periods and leaves bad ones, so net volatility falls and the
+  Sharpe ratio drops by less than the return does — 0.6699 to 0.4063
+  annualised while the total return more than halves. Offered so the smaller
+  fall is not read as a smaller fee.
+- An optional per-period hurdle grows the high-water mark; `hurdle` from
+  1.44.0 converts a quoted rate into the series it needs.
+- The final observation always crystallises, as if the investor redeemed
+  there, so an accrued fee is never left off the net figure.
+- Refusals over plausible answers. Every field of `FeeSchedule` except the
+  hurdle is required. A hurdle without a high-water mark is refused because
+  there is nothing for it to grow. A hurdle of the wrong length is refused
+  rather than truncated, and a schedule whose fees would take net asset value
+  to zero raises with a pointer at the usual cause — an annual rate passed as
+  a per-period one.
+- `mdnorm fees` on the command line, comparing several crystallisation
+  intervals with and without a mark on one file.
+
+### Note
+- The module is `fundfees` rather than `fees` so it is not confused with
+  `costs.Fees`, which prices a trade.
+
 ## [1.45.0] - 2026-09-19
 
 ### Added

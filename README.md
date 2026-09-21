@@ -2074,6 +2074,79 @@ which.
 $ mdnorm rebalance panel.csv --every 1 21 252 --band 0.02 --hold --drift-band 0.02
 ```
 
+### A backtest reports what the strategy earned; an investor keeps less
+
+Every figure above is gross of the fees a fund charges its investors. That is
+the right default for research and the wrong number to put in front of anyone
+deciding whether to invest, because the fee is not a constant subtracted from
+the return. A management fee compounds against the investor, and an incentive
+fee is a share of the upside with no share of the downside.
+
+Ten years of monthly gross returns, `gauss(0.0095, 0.035)` from
+`random.Random(20260921)`: 116.92 per cent in total, about 8.05 per cent a
+year. The same series through eight contracts:
+
+| Contract | Net total | Share of the profit taken |
+| --- | --- | --- |
+| No fees | 116.92% | 0% |
+| 2 and 20, annual, high-water mark | 55.44% | 52.59% |
+| 2 and 20, quarterly, high-water mark | 53.19% | 54.51% |
+| 2 and 20, monthly, high-water mark | 52.74% | 54.89% |
+| 2 and 20, annual, no mark | 53.31% | 54.41% |
+| 2 and 20, monthly, no mark | 19.54% | 83.29% |
+| 1.5 and 15, annual, high-water mark | 67.98% | 41.86% |
+| 2 and 0 | 77.77% | 33.48% |
+| 0 and 20, annual, high-water mark | 83.62% | 28.48% |
+
+```python
+from mdnorm import FeeSchedule, apply_fees
+
+res = apply_fees(gross, FeeSchedule(management=D("0.02"), incentive=D("0.20"),
+                                    periods_per_year=12, crystallise_every=12,
+                                    high_water_mark=True))
+
+res.gross_total           # 1.169200
+res.net_total             # 0.554361
+res.fee_share_of_profit   # 0.525863
+```
+
+**The headline rate is not the share of profit.** Under the most ordinary
+contract in the table the investor kept less than half of what the strategy
+earned: 8.05 per cent a year gross became 4.51 net. Even the row with no
+management fee at all took 28.48 per cent of the profit on a twenty per cent
+incentive, because a gain crystallised in one year is not returned when the
+next one loses.
+
+**How often the fee crystallises is a free parameter that moves the answer.**
+Nothing in the gross returns changes down the table. Monthly crystallisation
+without a high-water mark took 83 per cent of the profit on the same returns
+that an annual schedule with a mark took 53 per cent of. This is the argument
+from [the previous section](#how-often-the-book-is-traded-back-is-an-assumption)
+one layer up: an unstated schedule that decides how much is taken.
+
+**The Sharpe ratio falls by less than the return, and that is not good
+news.** The incentive fee trims good months and leaves bad ones alone, so net
+volatility is lower than gross. Annualised, the ratio goes from 0.6699 to
+0.4063 while the total return more than halves. `FeeResult.sharpe` offers
+both so that the smaller fall is not read as a smaller fee.
+
+**The investor leaves at the end of the sample.** An incentive fee accrued
+since the last crystallisation is charged at the final observation rather than
+dropped, because a net figure that ignores an accrued fee is one nobody could
+have redeemed at. A hurdle, when given, grows the high-water mark period by
+period; [`hurdle`](#a-return-has-to-beat-something) turns a quoted rate into
+the per-period series it needs.
+
+There is no default schedule. "Two and twenty" is four decisions, and the two
+that are not in the name are the ones the table shows moving the answer. The
+module is `fundfees`, not `fees`, so it is not mistaken for `costs.Fees`,
+which prices a trade.
+
+```console
+$ mdnorm fees gross.csv --management 0.02 --incentive 0.20 \
+    --periods-per-year 12 --crystallise-every 12 3 1 --compare-hwm
+```
+
 ### How much of the result is the search
 
 Everything above is about getting the data right. The last step is a correct
