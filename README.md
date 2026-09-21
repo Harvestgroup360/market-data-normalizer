@@ -2125,10 +2125,18 @@ from [the previous section](#how-often-the-book-is-traded-back-is-an-assumption)
 one layer up: an unstated schedule that decides how much is taken.
 
 **The Sharpe ratio falls by less than the return, and that is not good
-news.** The incentive fee trims good months and leaves bad ones alone, so net
-volatility is lower than gross. Annualised, the ratio goes from 0.6699 to
-0.4063 while the total return more than halves. `FeeResult.sharpe` offers
-both so that the smaller fall is not read as a smaller fee.
+news.** Annualised, the ratio goes from 0.6699 to 0.4063 — down 39 per cent —
+while the total return falls by 53. The ratio is built from the average
+monthly return, and averages do not compound: the fees cut the average month
+by 39 per cent, and ten years of compounding turn that into a total 53 per cent
+smaller. Volatility is not the reason. Under annual crystallisation it rises
+slightly, because the fee lands as a few large deductions; crystallise monthly
+and it falls a little. `FeeResult.sharpe` offers both ratios so that a 39 per
+cent fall in one is not read as a fee that took 39 per cent.
+
+An earlier version of this paragraph, in 1.46.0, attributed the gap to the
+incentive fee trimming volatility. On this series that is wrong, and the
+CHANGELOG says so.
 
 **The investor leaves at the end of the sample.** An incentive fee accrued
 since the last crystallisation is charged at the final observation rather than

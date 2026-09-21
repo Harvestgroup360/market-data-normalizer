@@ -185,11 +185,40 @@ def test_dropping_the_high_water_mark_takes_more():
         apply_fees(g, sched(hwm=True)).net_total
 
 
-def test_the_incentive_fee_trims_volatility_so_the_sharpe_falls_less_than_the_return():
-    res = apply_fees(gross(), sched(m="0", i="0.2", every=1))
+def _vol(xs):
+    m = sum(xs, D(0)) / len(xs)
+    return (sum(((x - m) ** 2 for x in xs), D(0)) / (len(xs) - 1)).sqrt()
+
+
+def test_the_sharpe_ratio_falls_less_than_the_total_on_the_worked_example():
+    """39 per cent against 53: the ratio is built from a mean that does not compound."""
+    res = apply_fees(gross(), sched())
     return_fall = 1 - res.net_total / res.gross_total
     sharpe_fall = 1 - res.sharpe(net=True, ddof=1) / res.sharpe(net=False, ddof=1)
     assert sharpe_fall < return_fall
+    assert about(sharpe_fall, "0.394", "0.001")
+    assert about(return_fall, "0.526", "0.001")
+
+
+def test_the_gap_is_compounding_not_volatility():
+    """The 1.46.0 docs said the fee trims volatility. On this series it does not.
+
+    With annual crystallisation the incentive fee lands as a few large
+    deductions and net volatility is slightly *higher* than gross; with
+    monthly crystallisation it is slightly lower. The Sharpe ratio falls by
+    less than the total return in both cases, so volatility cannot be the
+    reason. The per-period mean falls by almost exactly as much as the ratio.
+    """
+    g = gross()
+    annual = apply_fees(g, sched(every=12))
+    monthly = apply_fees(g, sched(every=1))
+    assert _vol(annual.net_returns) > _vol(annual.gross_returns)
+    assert _vol(monthly.net_returns) < _vol(monthly.gross_returns)
+    for res in (annual, monthly):
+        mean_fall = 1 - sum(res.net_returns, D(0)) / sum(res.gross_returns, D(0))
+        sharpe_fall = 1 - res.sharpe(net=True, ddof=1) / res.sharpe(net=False, ddof=1)
+        assert abs(mean_fall - sharpe_fall) < D("0.03")
+        assert sharpe_fall < 1 - res.net_total / res.gross_total
 
 
 def test_the_incentive_share_of_fees_is_none_when_nothing_was_paid():

@@ -3,6 +3,26 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.46.1] - 2026-09-21
+
+### Fixed
+- **The 1.46.0 explanation of why the Sharpe ratio falls less than the return
+  was wrong.** The documentation said the incentive fee trims good periods
+  and leaves bad ones, so net volatility falls. On the worked example it does
+  not: under annual crystallisation net volatility is slightly *higher* than
+  gross, because the fee lands as a few large deductions. The real reason is
+  compounding. The ratio is built from the per-period mean, which the fees cut
+  by 39 per cent; ten years of compounding turn that into a total return 53
+  per cent smaller. The figures themselves (0.6699 to 0.4063 annualised) were
+  right. The docstring of `FeeResult.sharpe`, the README and the article
+  written for this release have been corrected.
+- The test that carried the wrong explanation in its name has been replaced
+  by two that pin the actual behaviour, with one sample of each sign: net
+  volatility rises under annual crystallisation and falls under monthly, and
+  in both the per-period mean falls by almost exactly as much as the ratio.
+  That is the check that would have caught this before release, and it is
+  now in the suite.
+
 ## [1.46.0] - 2026-09-21
 
 ### Added

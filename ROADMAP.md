@@ -11,9 +11,9 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Fifty-eight tagged releases, forty-five of them published to PyPI (the
+Fifty-nine tagged releases, forty-six of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 1790 tests, and a type checker that passes clean.
+dependencies, Python 3.10+, 1791 tests, and a type checker that passes clean.
 
 | Layer | Modules |
 | --- | --- |

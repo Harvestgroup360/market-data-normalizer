@@ -449,7 +449,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.46.0"
+__version__ = "1.46.1"
 
 __all__ = [
     "MarketEvent",

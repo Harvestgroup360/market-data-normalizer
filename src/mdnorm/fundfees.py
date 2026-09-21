@@ -167,10 +167,14 @@ class FeeResult:
     def sharpe(self, *, net: bool, ddof: int) -> Optional[Decimal]:
         """Per-period Sharpe ratio of the gross or net series, no hurdle.
 
-        The incentive fee trims the upside and leaves the downside, so net
-        volatility is usually lower than gross and the Sharpe ratio falls by
-        less than the return does. Both are available so that the smaller
-        fall is not mistaken for a smaller fee.
+        The ratio usually falls by less than the compounded total return, and
+        the reason is compounding rather than volatility. A Sharpe ratio is
+        built from the per-period mean, which does not compound; the total
+        compounds that smaller mean over every period. Volatility moves only
+        a little, and in either direction: frequent crystallisation trims good
+        periods and lowers it, while an annual fee lands as a few large
+        deductions and can raise it. Both ratios are available so that a
+        smaller fall in the ratio is not mistaken for a smaller fee.
         """
         xs = self.net_returns if net else self.gross_returns
         with localcontext() as ctx:
