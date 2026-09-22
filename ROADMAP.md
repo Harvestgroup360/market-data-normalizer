@@ -11,9 +11,9 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Fifty-nine tagged releases, forty-six of them published to PyPI (the
+Sixty tagged releases, forty-seven of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 1791 tests, and a type checker that passes clean.
+dependencies, Python 3.10+, 1815 tests, and a type checker that passes clean.
 
 | Layer | Modules |
 | --- | --- |
@@ -24,13 +24,13 @@ dependencies, Python 3.10+, 1791 tests, and a type checker that passes clean.
 | Microstructure | `book`, `consolidate`, `micro` |
 | Execution | `execution` |
 | Research | `align`, `arrival`, `features`, `labels`, `revisions`, `mixfreq`, `seasonality` |
-| Evaluation | `metrics`, `costs`, `compounding`, `serial`, `underwater`, `hurdle`, `rebalance`, `fundfees`, `independence`, `breadth`, `exposure`, `extremes`, `windows`, `multiverse` |
+| Evaluation | `metrics`, `costs`, `compounding`, `serial`, `underwater`, `hurdle`, `rebalance`, `fundfees`, `selection`, `independence`, `breadth`, `exposure`, `extremes`, `windows`, `multiverse` |
 | Reproducibility | `provenance` |
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
 Shipped since the last revision of this file: `mixfreq`, `membership`,
 `reconcile`, `calendars`, `fx`, `ticksize`, `arrival`, `seasonality`, `resolution`, `auctions`, `independence`, `staleness`, `halts`, `coverage`, `provenance`, `extremes`, `windows`,
-`multiverse`, `breadth`, `exposure`, `compounding`, `serial`, `underwater`, `hurdle`, `rebalance` and `fundfees`. The first two were the items that stood under
+`multiverse`, `breadth`, `exposure`, `compounding`, `serial`, `underwater`, `hurdle`, `rebalance`, `fundfees` and `selection`. The first two were the items that stood under
 *Under consideration* below; the other four were not on the list. `reconcile` is
 here because comparing two sources of the same series is the check people run
 before trusting either, and nothing in the library did it. A slow series now carries the
@@ -68,7 +68,22 @@ it is conservative and still wrong, and estimating the effective count would
 need a model of how the decisions correlate. We do not have one, so we say so
 instead of shipping a number that looks like we do.
 
-`fundfees` is the newest, and it is the last step between a backtest and a
+`selection` is the newest, and it closes the argument that `windows`,
+`multiverse` and the deflated Sharpe ratio opened. Those count the
+alternatives and correct the winner for them; this tests the procedure of
+choosing a winner at all. On twenty variants with identical true edge the
+probability of backtest overfitting is 0.7540: the in-sample winner looked like
+an annualised 1.73 and went on to 0.21, less than an average variant's 0.50.
+Put one genuinely better variant among them and the probability falls to
+0.3889.
+
+One sentence in it is on the record because it was wrong in the first draft.
+The docstring said the probability sits near one half on noise. The worked
+example measured 0.75, the reason is structural — complementary halves — and
+the sentence was changed before release rather than after. That is the check
+the 1.46.1 correction added to the process, applied one day later.
+
+`fundfees` is the last step between a backtest and a
 statement anyone could invest on. Everything else here is gross; an investor
 is paid net, and the fee is not a constant subtracted from the return. Ten
 years that earned 116.92 per cent leave 55.44 under two and twenty with annual

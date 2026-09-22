@@ -3126,6 +3126,57 @@ def _cmd_fees(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_selection(args: argparse.Namespace) -> int:
+    """Test the procedure of choosing the in-sample winner."""
+    import csv as _csv
+
+    from .selection import cscv
+
+    try:
+        with open_text(args.input) as fh:
+            reader = _csv.DictReader(fh)
+            if reader.fieldnames is None:
+                print("error: the file has no header row", file=sys.stderr)
+                return 1
+            names = [c for c in reader.fieldnames if c != args.ts_field]
+            cols: dict = {k: [] for k in names}
+            for row in reader:
+                for k in names:
+                    cols[k].append(Decimal(row[k].strip()))
+        rep = cscv(cols, blocks=args.blocks, metric=args.metric,
+                   ddof=args.ddof if args.metric == "sharpe" else None)
+    except (KeyError, ValueError, ArithmeticError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    scale = Decimal(args.annualise).sqrt() if args.annualise else Decimal(1)
+    unit = f" (x sqrt {args.annualise})" if args.annualise else " (per period)"
+
+    def line(label: str, value: str) -> None:
+        print(f"{label:<34} {value}", file=sys.stderr)
+
+    line("variants", str(rep.variants))
+    line("observations", f"{rep.observations} in {rep.blocks} blocks")
+    line("splits", str(len(rep.splits)))
+    line("probability of overfitting", f"{rep.pbo:.4f}")
+    line("median logit", f"{rep.median_logit:.4f}")
+    line(f"winner, in-sample{unit}", f"{rep.mean_is_best * scale:.4f}")
+    line(f"winner, out-of-sample{unit}", f"{rep.mean_oos_of_is_best * scale:.4f}")
+    line(f"average variant, out-of-sample", f"{rep.mean_oos_all * scale:.4f}")
+    line("winner lost out of sample", f"{rep.oos_loss_share * 100:.2f}% of splits")
+    slope = rep.degradation_slope
+    line("degradation slope", "n/a" if slope is None else f"{slope:.4f}")
+    top = list(rep.chosen.items())[:5]
+    line("most often chosen", ", ".join(f"{k} {v}" for k, v in top))
+    print("note: the probability describes the search, not any one variant. "
+          "At or above one half, choosing the in-sample winner did no better "
+          "than choosing at random.", file=sys.stderr)
+    print("note: the in-sample figure of the winner is the maximum of many "
+          "estimates and flatters by construction; read the out-of-sample "
+          "line beside it.", file=sys.stderr)
+    return 0
+
+
 def _cmd_reconcile(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -4257,6 +4308,25 @@ def build_parser() -> argparse.ArgumentParser:
     p_fe.add_argument("--ts-field", default="ts_ns", metavar="NAME")
     p_fe.add_argument("--value-field", default="value", metavar="NAME")
     p_fe.set_defaults(func=_cmd_fees)
+
+
+    p_se = sub.add_parser("selection",
+                          help="probability of backtest overfitting: does "
+                               "choosing the in-sample winner generalise?")
+    p_se.add_argument("input", help="CSV with a timestamp column and one "
+                                    "column of per-period returns per variant")
+    p_se.add_argument("--blocks", type=int, required=True, metavar="S",
+                      help="even number of contiguous blocks; C(S, S/2) "
+                           "splits are evaluated")
+    p_se.add_argument("--metric", choices=("mean", "sharpe"), required=True,
+                      help="what 'best' means")
+    p_se.add_argument("--ddof", type=int, default=None, metavar="N",
+                      help="required with --metric sharpe")
+    p_se.add_argument("--annualise", type=int, default=None, metavar="P",
+                      help="scale printed metrics by sqrt(P) for reading; "
+                           "the probability is unaffected")
+    p_se.add_argument("--ts-field", default="ts_ns", metavar="NAME")
+    p_se.set_defaults(func=_cmd_selection)
 
 
     p_rc = sub.add_parser("reconcile",

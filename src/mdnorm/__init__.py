@@ -344,6 +344,12 @@ from .underwater import (
     underwater_report,
     underwater_share,
 )
+from .selection import (
+    SelectionReport,
+    SelectionSplit,
+    block_splits,
+    cscv,
+)
 from .fundfees import (
     FeeComparison,
     FeeResult,
@@ -449,7 +455,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.46.1"
+__version__ = "1.47.0"
 
 __all__ = [
     "MarketEvent",
@@ -824,6 +830,10 @@ __all__ = [
     "FeeComparison",
     "apply_fees",
     "compare_fees",
+    "SelectionSplit",
+    "SelectionReport",
+    "block_splits",
+    "cscv",
     "Digest",
     "InputRef",
     "Manifest",

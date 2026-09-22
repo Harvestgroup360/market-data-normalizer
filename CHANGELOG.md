@@ -3,6 +3,41 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.47.0] - 2026-09-22
+
+### Added
+- `selection`: the probability of backtest overfitting, by combinatorially
+  symmetric cross-validation (Bailey, Borwein, López de Prado and Zhu, 2017).
+  Every research process ends by keeping the variant that looked best; this
+  tests whether that procedure picks something that does well out of sample,
+  without a distributional assumption. The deflated Sharpe ratio in `metrics`
+  corrects the winner; this measures the search that produced it.
+- On twenty variants with identical true edge (annualised Sharpe about 0.32),
+  ten blocks and 252 splits: probability of overfitting 0.7540. The in-sample
+  winner averaged 1.7260 annualised and went on to 0.2128 out of sample, where
+  an average variant earned 0.4979. The degradation slope is -0.5604 — a
+  better-looking winner did worse. Choosing the winner was worse than choosing
+  at random.
+- **The probability is above one half on noise, not at it**, and the docs say
+  why rather than claiming one half: the two halves of a split are
+  complements, so a variant that did well in one did relatively worse in the
+  other for a given whole-sample result. The first draft of the module
+  docstring said "near one half"; the worked example measured 0.75 and the
+  sentence was corrected before release.
+- With one genuinely better variant among the twenty the probability falls to
+  0.3889 and that variant is chosen in 130 of 252 splits. Same method, same
+  noise; the search now contains something worth finding.
+- Refusals over plausible answers. A sample that does not divide into the
+  stated number of blocks is refused with the remainder named, not trimmed.
+  Variants of different lengths, an odd block count, a single variant, and a
+  Sharpe metric without `ddof` are refused. A variant with no dispersion in
+  some split raises and names the variant and the blocks. Ties never flatter
+  the winner.
+- Per-block sums are computed once per variant, so cost grows with the number
+  of splits, not with splits times sample length.
+- `mdnorm selection` on the command line, with an `--annualise` flag that
+  scales the printed metrics for reading and leaves the probability alone.
+
 ## [1.46.1] - 2026-09-21
 
 ### Fixed

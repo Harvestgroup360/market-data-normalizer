@@ -2155,6 +2155,69 @@ $ mdnorm fees gross.csv --management 0.02 --incentive 0.20 \
     --periods-per-year 12 --crystallise-every 12 3 1 --compare-hwm
 ```
 
+### Choosing the best backtest is a procedure, and it can be tested
+
+Every research process ends with a choice: of the variants tried, keep the one
+that looked best. The deflated Sharpe ratio asks how good that winner would
+have looked by luck. `selection` asks a question that needs no distributional
+assumption: does the *procedure* of picking the in-sample winner choose
+something that does well out of sample?
+
+It uses combinatorially symmetric cross-validation (Bailey, Borwein, López de
+Prado and Zhu, 2017). Cut the sample into an even number of contiguous blocks;
+for every way of using half of them in-sample and half out-of-sample, find the
+in-sample winner and record where it finished out of sample.
+
+Twenty variants, a thousand daily returns each, every one drawn with the same
+true edge — `gauss(0.0002, 0.01)` from `random.Random(20260922)`, an
+annualised Sharpe of about 0.32. Ten blocks, 252 splits:
+
+```python
+from mdnorm import cscv
+
+rep = cscv(variants, blocks=10, metric="sharpe", ddof=1)
+
+rep.pbo                    # 0.7540 — the probability of backtest overfitting
+rep.mean_is_best           # 1.7260 annualised: how good the winner looked
+rep.mean_oos_of_is_best    # 0.2128: what the same winner went on to do
+rep.mean_oos_all           # 0.4979: what an average variant did
+rep.degradation_slope      # -0.5604: a better-looking winner did worse
+```
+
+| | Probability of overfitting | Winner in-sample | Winner out-of-sample | Average variant out-of-sample |
+| --- | --- | --- | --- | --- |
+| Twenty variants, identical edge | 0.7540 | 1.7260 | 0.2128 | 0.4979 |
+| Same, with one genuinely better variant | 0.3889 | 2.0117 | 0.7707 | 0.5530 |
+
+Annualised Sharpe ratios at 252 periods a year.
+
+**On identical strategies, picking the winner was worse than picking at
+random.** The chosen variant earned 0.21 out of sample where an average pick
+earned 0.50. The probability is above one half rather than at it because the
+two halves of each split are complements: for a given whole-sample result, a
+variant that did well in one half did relatively worse in the other.
+
+**It measures the search, not a strategy.** Replace one of the twenty with a
+variant that has a real edge and the probability falls to 0.39; that variant is
+chosen in 130 of the 252 splits. Same method, same noise, different answer,
+because the search now contains something worth finding.
+
+**The winner's in-sample figure is flattering by construction.** It is the
+maximum of twenty noisy estimates. On the full sample, the best of the twenty
+identical variants shows an annualised Sharpe ratio of 1.26 against a true
+value of about 0.32.
+
+Blocks are contiguous so serial structure inside them survives, and a sample
+that does not divide into the stated number of blocks is refused rather than
+trimmed. Ties in-sample go to the first name in sorted order, and the
+out-of-sample rank counts only variants strictly below the winner, so a tie
+never flatters it. No default block count and no default metric: both decide
+the answer.
+
+```console
+$ mdnorm selection variants.csv --blocks 10 --metric sharpe --ddof 1 --annualise 252
+```
+
 ### How much of the result is the search
 
 Everything above is about getting the data right. The last step is a correct
