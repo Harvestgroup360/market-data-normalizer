@@ -2218,6 +2218,80 @@ the answer.
 $ mdnorm selection variants.csv --blocks 10 --metric sharpe --ddof 1 --annualise 252
 ```
 
+### A strategy earns a return. An investor earns a rate on the money that was there
+
+Every return series above describes one unit of capital held from the first
+observation to the last. Nobody invests that way. Money arrives after a good
+year and leaves after a bad one, and the chain-linked figure in the backtest is
+deliberately blind to all of it.
+
+`flows` reports both rates over one window: the time-weighted return, which
+judges the strategy, and the money-weighted return — the internal rate of the
+investor's cash flows — which is what the money earned.
+
+The textbook case first, because it needs no simulation. A strategy doubles and
+then halves: chain-linked, it returned exactly zero. An investor who put in 100
+at the start and another 100 after the good period ends with 150 out of 200
+contributed.
+
+```python
+from mdnorm import flow_report
+
+rep = flow_report([D(1), D("-0.5")], [D(100), D(100)], when="start")
+
+rep.time_weighted          # 0.0000  — what the strategy did
+rep.money_weighted         # -0.1771 — per period, what the money did
+rep.money_weighted_total   # -0.3229 — over the window
+rep.profit                 # -50: the whole of it belongs to the timing
+```
+
+Then five years of one unchanged strategy — sixty monthly returns from
+`random.Random(20260923)`, `gauss(0.008, 0.045)` — with three flow paths over
+it. The chasing path contributes 20 a month after a positive trailing year and
+5 after a negative one; the contrarian path does the opposite; the level path
+contributes 10 every month regardless.
+
+| Flow path | Contributed | Money-weighted | Against the strategy |
+| --- | --- | --- | --- |
+| Level, 10 a month | 600 | 0.6292 | +0.0856 |
+| Chasing the trailing year | 975 | 0.6101 | +0.0664 |
+| Contrarian | 465 | 0.6661 | +0.1224 |
+
+The strategy returned **0.5437** over the same sixty months in every row.
+
+**Every difference in that column belongs to the schedule, not to the
+manager.** The spread between the best and worst path is 5.60 percentage
+points on returns that never changed. Chasing earned the least of the three
+and contributed the most to do it.
+
+**Part of the gap is arithmetic, not behaviour.** A money-weighted rate is a
+capital-weighted average of the periods and a chain-linked one is a geometric
+average, so the two differ even on a level schedule with no timing in it at
+all. `timing_effect` holds the amount fixed and contributes it in equal parts,
+leaving only the part a decision could have changed: **-0.0192** for the
+chasing path.
+
+**The timing convention is required.** A contribution at the start of a period
+earns that period's return and the same contribution at the end does not, so
+`when` has no default.
+
+**The approximation in every performance report is shown with its error.**
+Modified Dietz divides the gain by a weighted capital base and never
+compounds, so it is exact only when a single flow opens the window. Twelve
+monthly contributions at a flat one per cent a month come out at 12.4512 per
+cent against a true 12.6825, and on the sixty-month level path it reads 0.5791
+against 0.6292 — an error of five percentage points in the direction that
+understates.
+
+An internal rate of return can have more than one root when the cash flows
+change sign more than once. `root_unique` says whether that condition holds,
+and `npv` lets any rate be checked directly rather than taken on trust. The
+rate itself is found by bisection, so it does not depend on a starting guess.
+
+```console
+$ mdnorm flows account.csv --when start --periods-per-year 12 --level
+```
+
 ### How much of the result is the search
 
 Everything above is about getting the data right. The last step is a correct

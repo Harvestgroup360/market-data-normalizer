@@ -3,6 +3,48 @@
 All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.48.0] - 2026-09-23
+
+### Added
+- `flows`: the time-weighted return against the money-weighted one. Every
+  return series in the library describes a unit of capital held from the first
+  observation to the last; an investor holds a balance that changes. The
+  chain-linked figure judges the strategy and is blind to the flows by
+  construction, and the internal rate of the investor's cash flows is what the
+  money earned.
+- `flow_report`, `compare_flows`, `balances`, `time_weighted`,
+  `modified_dietz`, `internal_rate_of_return`, `level_flows` and
+  `sign_changes`, with `FlowReport` carrying `gap`, `timing_effect`,
+  `dietz_error`, `capital_at_worst_ratio`, `root_unique` and `npv`.
+- Worked example, sixty monthly returns from `random.Random(20260923)` and
+  three flow paths over them: the strategy returned 0.5437 in every row, while
+  the level path earned 0.6292, the chasing path 0.6101 and the contrarian
+  path 0.6661 — a spread of 5.6011 percentage points that belongs to the
+  schedule rather than to the manager. On the textbook case, a strategy that
+  doubles and then halves returns exactly zero while an investor who added
+  after the good period earned -0.1771 a period.
+- `timing_effect` separates the two causes. A money-weighted rate is a
+  capital-weighted average and a chain-linked one is geometric, so the two
+  differ even on a level schedule; holding the amount fixed and contributing
+  it evenly leaves -0.0192 for the chasing path, which is the part a decision
+  could have changed.
+- `when` is required, with no default: a flow at the start of a period earns
+  that period's return and one at the end does not.
+- The internal rate is found by bisection rather than from a guess, and
+  `root_unique` reports whether the cash flows change sign exactly once — the
+  condition under which the answer is the only root. `npv` is public so that a
+  path with several roots can be examined instead of summarised.
+- CLI: `mdnorm flows`, with `--when`, `--level` for the counterfactual and
+  `--periods-per-year` for annualising. No calendar is assumed.
+
+### Fixed
+- Before release: the module documentation said modified Dietz is exact when
+  the rate is constant. It is not. It charges simple interest on a weighted
+  capital base and never compounds, so it is exact only when a single flow
+  opens the window — twelve monthly contributions at a flat one per cent come
+  out at 12.4512 per cent against a true 12.6825. The worked example caught it
+  and the sentence was corrected before the release rather than after.
+
 ## [1.47.0] - 2026-09-22
 
 ### Added

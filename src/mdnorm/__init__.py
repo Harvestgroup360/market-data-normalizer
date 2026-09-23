@@ -344,6 +344,18 @@ from .underwater import (
     underwater_report,
     underwater_share,
 )
+from .flows import (
+    FlowComparison,
+    FlowReport,
+    balances,
+    compare_flows,
+    flow_report,
+    internal_rate_of_return,
+    level_flows,
+    modified_dietz,
+    sign_changes,
+    time_weighted,
+)
 from .selection import (
     SelectionReport,
     SelectionSplit,
@@ -455,7 +467,7 @@ from .streams import dedupe, merge_streams
 from .symbols import canonical_symbol
 from .timeutil import epoch_to_ns, fix_utc_to_ns, iso_to_ns
 
-__version__ = "1.47.0"
+__version__ = "1.48.0"
 
 __all__ = [
     "MarketEvent",
@@ -834,6 +846,16 @@ __all__ = [
     "SelectionReport",
     "block_splits",
     "cscv",
+    "FlowReport",
+    "FlowComparison",
+    "balances",
+    "compare_flows",
+    "flow_report",
+    "internal_rate_of_return",
+    "level_flows",
+    "modified_dietz",
+    "sign_changes",
+    "time_weighted",
     "Digest",
     "InputRef",
     "Manifest",

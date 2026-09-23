@@ -11,9 +11,9 @@ a proposal does not reduce one of those, it probably belongs somewhere else.
 
 ## Where the library is
 
-Sixty tagged releases, forty-seven of them published to PyPI (the
+Sixty-one tagged releases, forty-eight of them published to PyPI (the
 package went out under Trusted Publishing from 1.3.1 onwards). No runtime
-dependencies, Python 3.10+, 1815 tests, and a type checker that passes clean.
+dependencies, Python 3.10+, 1858 tests, and a type checker that passes clean.
 
 | Layer | Modules |
 | --- | --- |
@@ -24,13 +24,13 @@ dependencies, Python 3.10+, 1815 tests, and a type checker that passes clean.
 | Microstructure | `book`, `consolidate`, `micro` |
 | Execution | `execution` |
 | Research | `align`, `arrival`, `features`, `labels`, `revisions`, `mixfreq`, `seasonality` |
-| Evaluation | `metrics`, `costs`, `compounding`, `serial`, `underwater`, `hurdle`, `rebalance`, `fundfees`, `selection`, `independence`, `breadth`, `exposure`, `extremes`, `windows`, `multiverse` |
+| Evaluation | `metrics`, `costs`, `compounding`, `serial`, `underwater`, `hurdle`, `rebalance`, `fundfees`, `selection`, `flows`, `independence`, `breadth`, `exposure`, `extremes`, `windows`, `multiverse` |
 | Reproducibility | `provenance` |
 | Measured | [`bench/benchmark.py`](bench/benchmark.py), [BENCHMARKS.md](BENCHMARKS.md) |
 
 Shipped since the last revision of this file: `mixfreq`, `membership`,
 `reconcile`, `calendars`, `fx`, `ticksize`, `arrival`, `seasonality`, `resolution`, `auctions`, `independence`, `staleness`, `halts`, `coverage`, `provenance`, `extremes`, `windows`,
-`multiverse`, `breadth`, `exposure`, `compounding`, `serial`, `underwater`, `hurdle`, `rebalance`, `fundfees` and `selection`. The first two were the items that stood under
+`multiverse`, `breadth`, `exposure`, `compounding`, `serial`, `underwater`, `hurdle`, `rebalance`, `fundfees`, `selection` and `flows`. The first two were the items that stood under
 *Under consideration* below; the other four were not on the list. `reconcile` is
 here because comparing two sources of the same series is the check people run
 before trusting either, and nothing in the library did it. A slow series now carries the
@@ -68,7 +68,34 @@ it is conservative and still wrong, and estimating the effective count would
 need a model of how the decisions correlate. We do not have one, so we say so
 instead of shipping a number that looks like we do.
 
-`selection` is the newest, and it closes the argument that `windows`,
+`flows` is the newest, and it is the last step in a chain the previous three
+releases built: `hurdle` said what a return is measured against, `rebalance`
+said where the return series came from, `fundfees` said what the investor was
+left with, and this says what the money actually earned. A backtest reports a
+chain-linked return, which is blind to the size of the account by construction
+and is the right number for judging a manager. An investor is paid the
+internal rate of their own cash flows. On sixty monthly returns that never
+change, three flow paths earn 0.6292, 0.6101 and 0.6661 against a strategy
+return of 0.5437: a spread of 5.6011 percentage points owned by the schedule.
+
+Two decisions in it follow the pattern. The gap is split rather than reported
+whole, because part of it is arithmetic — a capital-weighted average against a
+geometric one — and only the rest could have been decided differently;
+`timing_effect` holds the contributed amount fixed and removes the schedule,
+leaving -0.0192 for the path that chases performance. And the approximation
+administrators use is reported beside the exact answer with its error rather
+than instead of it: modified Dietz never compounds, so it is exact only when
+one flow opens the window, and it read 0.5791 against 0.6292 on the level
+path here.
+
+One sentence in it was wrong in the first draft and is on the record for the
+same reason 1.46.1 and 1.47.0 are: the documentation claimed modified Dietz is
+exact on a constant rate. The worked example disagreed, the reason is that the
+approximation charges simple interest, and the sentence was fixed before
+release. That is now three consecutive releases where the check after writing
+caught something.
+
+`selection` closes the argument that `windows`,
 `multiverse` and the deflated Sharpe ratio opened. Those count the
 alternatives and correct the winner for them; this tests the procedure of
 choosing a winner at all. On twenty variants with identical true edge the

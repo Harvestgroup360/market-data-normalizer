@@ -3177,6 +3177,84 @@ def _cmd_selection(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_flows(args: argparse.Namespace) -> int:
+    """What the strategy returned, and what the money in it earned."""
+    import csv as _csv
+
+    from .flows import compare_flows, level_flows
+
+    try:
+        with open_text(args.input) as fh:
+            reader = _csv.DictReader(fh)
+            if reader.fieldnames is None:
+                print("error: the file has no header row", file=sys.stderr)
+                return 1
+            for field in (args.value_field, args.flow_field):
+                if field not in reader.fieldnames:
+                    print(f"error: no column {field!r} in {reader.fieldnames}",
+                          file=sys.stderr)
+                    return 1
+            returns, flows = [], []
+            for row in reader:
+                returns.append(Decimal(row[args.value_field].strip()))
+                flows.append(Decimal(row[args.flow_field].strip()))
+        paths = {"as given": flows}
+        if args.level:
+            paths["level, same total"] = list(level_flows(flows))
+        cmp = compare_flows(returns, paths, when=args.when)
+    except (KeyError, ValueError, ArithmeticError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    rep = cmp.row("as given")
+    ppy = args.periods_per_year
+
+    def line(label: str, value: str) -> None:
+        print(f"{label:<34} {value}", file=sys.stderr)
+
+    line("periods", f"{rep.periods}, flows at the {rep.when} of each")
+    line("contributed / withdrawn", f"{rep.contributed} / {rep.withdrawn}")
+    line("terminal value", f"{rep.terminal_value:.6f}")
+    line("time-weighted (the strategy)", f"{rep.time_weighted:.6f}")
+    line("money-weighted (this path)", f"{rep.money_weighted_total:.6f}")
+    line("gap", f"{rep.gap:+.6f}")
+    timing = rep.timing_effect
+    line("of which timing",
+         "n/a" if timing is None else f"{timing:+.6f}")
+    line("per period", f"{rep.time_weighted_per_period:.8f} vs "
+                       f"{rep.money_weighted:.8f}")
+    if ppy:
+        line(f"annualised (x{ppy} periods)",
+             f"{rep.annualised(rep.time_weighted_per_period, periods_per_year=ppy):.6f}"
+             f" vs {rep.annualised(rep.money_weighted, periods_per_year=ppy):.6f}")
+    line("modified Dietz", f"{rep.modified_dietz:.6f} "
+                           f"(error {rep.dietz_error:+.6f})")
+    worst = rep.capital_at_worst_ratio
+    best = rep.capital_at_best_ratio
+    line("capital at worst / best period",
+         ("n/a" if worst is None or best is None
+          else f"{worst:.4f} / {best:.4f} of average"))
+    line("single root", "yes" if rep.root_unique else
+         "no: the flows change sign more than once")
+    if len(cmp.reports) > 1:
+        for label, other in zip(cmp.labels, cmp.reports):
+            if label != "as given":
+                print(f"{label:<34} {other.money_weighted_total:.6f}",
+                      file=sys.stderr)
+        print(f"spread on identical returns: "
+              f"{cmp.money_weighted_spread:.6f}", file=sys.stderr)
+    print("note: the time-weighted figure is the same for every flow path "
+          "over these returns. It judges the strategy; it is not what the "
+          "money earned.", file=sys.stderr)
+    print("note: part of the gap is arithmetic rather than timing — a "
+          "capital-weighted average against a geometric one. The timing line "
+          "holds the amount fixed and removes the schedule.", file=sys.stderr)
+    print("note: modified Dietz charges simple interest on a weighted base "
+          "and never compounds; it is exact only when one flow opens the "
+          "window.", file=sys.stderr)
+    return 0
+
+
 def _cmd_reconcile(args: argparse.Namespace) -> int:
     import csv as _csv
 
@@ -4327,6 +4405,28 @@ def build_parser() -> argparse.ArgumentParser:
                            "the probability is unaffected")
     p_se.add_argument("--ts-field", default="ts_ns", metavar="NAME")
     p_se.set_defaults(func=_cmd_selection)
+
+
+    p_fl = sub.add_parser("flows",
+                          help="time-weighted against money-weighted: what "
+                               "the strategy returned and what the money in "
+                               "it earned")
+    p_fl.add_argument("input", help="CSV with a per-period return column and "
+                                    "an external cash-flow column")
+    p_fl.add_argument("--when", choices=("start", "end"), required=True,
+                      help="whether a flow lands before or after that "
+                           "period's return; there is no default")
+    p_fl.add_argument("--flow-field", default="flow", metavar="NAME",
+                      help="column of external flows, contributions positive")
+    p_fl.add_argument("--periods-per-year", type=int, default=None,
+                      metavar="N", help="annualise both rates with this "
+                                        "calendar; nothing is assumed")
+    p_fl.add_argument("--level", action="store_true",
+                      help="also report the same net capital contributed in "
+                           "equal parts, to separate timing from amount")
+    p_fl.add_argument("--ts-field", default="ts_ns", metavar="NAME")
+    p_fl.add_argument("--value-field", default="value", metavar="NAME")
+    p_fl.set_defaults(func=_cmd_flows)
 
 
     p_rc = sub.add_parser("reconcile",
